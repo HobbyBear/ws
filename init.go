@@ -3,6 +3,7 @@ package ws
 import (
 	"github.com/gorilla/websocket"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -12,6 +13,7 @@ func InitWs(addr string, options ...Option) *Server {
 		PingInterval: 3 * time.Second,
 		Upgrader:     &websocket.Upgrader{},
 		Logger:       defaultLogger,
+		wg:           sync.WaitGroup{},
 	}
 	s.Serv = &http.Server{
 		Addr:    addr,

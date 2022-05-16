@@ -1,8 +1,9 @@
 package ws
 
 import (
-	"encoding/json"
+	"container/list"
 	"github.com/gorilla/websocket"
+	jsoniter "github.com/json-iterator/go"
 	"sync"
 	"time"
 )
@@ -34,36 +35,21 @@ func (d *defaultRouterMgr) RegHandler(msgId string, handler RouterHandler) {
 }
 
 var (
-	pongHandler = func(conn *Conn) {
-		conn.wsConn.WriteControl(websocket.PongMessage, nil, time.Now().Add(time.Second))
+	sendPong = func(conn *Conn, data string) {
+		conn.WriteMsg(&RawMsg{WsMsgType: websocket.PongMessage, Data: nil, DeadLine: time.Now().Add(time.Second)})
 	}
-	pingHandler = func(conn *Conn) {
-		conn.wsConn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second))
+	sendPing = func(conn *Conn) {
+		conn.WriteMsg(&RawMsg{WsMsgType: websocket.PingMessage, Data: nil, DeadLine: time.Now().Add(time.Second)})
 	}
 
 	routerMgr RouterMgr = &defaultRouterMgr{
 		routerMap: map[string]RouterHandler{},
 	}
 
-	requestHandler = func(req *Request) {
-		switch req.MsgType {
-		case websocket.PingMessage:
-			pongHandler(req.Conn)
-		case websocket.CloseMessage:
-			req.Conn.Close()
-			return
-		case websocket.TextMessage, websocket.BinaryMessage:
-			dataHandler(req.Conn, req.Data, req.MsgType)
-		}
-	}
-
 	dataHandler = func(conn *Conn, data []byte, wsMsgType int) {
-		type dataMsg struct {
-			MsgId   string `json:"msg_id"`
-			Content []byte `json:"content"`
-		}
-		var msg dataMsg
-		err := json.Unmarshal(data, &msg)
+		var msg = &DataMsg{}
+		var json = jsoniter.ConfigCompatibleWithStandardLibrary
+		err := json.Unmarshal(data, msg)
 		if err != nil {
 			Errorf("data msg is invalid err=%s data=%s", err, string(data))
 			return
@@ -79,6 +65,7 @@ var (
 	}
 	authHandler = func(data []byte) (*AuthMsg, bool) {
 		var authMsg AuthMsg
+		var json = jsoniter.ConfigCompatibleWithStandardLibrary
 		err := json.Unmarshal(data, &authMsg)
 		if err != nil {
 			return nil, false
@@ -93,7 +80,7 @@ var (
 	defaultConnMgr = &DefaultConnMgr{
 		UidConnMap:   make(map[string][]*Conn),
 		GroupConnMap: make(map[string][]*Conn),
-		All:          make([]*Conn, 0),
+		All:          list.New(),
 		mux:          sync.Mutex{},
 	}
 
@@ -116,13 +103,16 @@ type ConnMgr interface {
 type DefaultConnMgr struct {
 	UidConnMap   map[string][]*Conn
 	GroupConnMap map[string][]*Conn
-	All          []*Conn
+	All          *list.List
 	mux          sync.Mutex
 }
 
 func (cm *DefaultConnMgr) GetAllConn() []*Conn {
-	//TODO implement me
-	panic("implement me")
+	connList := make([]*Conn, 0)
+	for i := cm.All.Front(); i != nil; i = i.Next() {
+		connList = append(connList, i.Value.(*Conn))
+	}
+	return connList
 }
 
 func (cm *DefaultConnMgr) Add(c *Conn) {
@@ -134,17 +124,16 @@ func (cm *DefaultConnMgr) Add(c *Conn) {
 	if len(c.GroupId) != 0 {
 		cm.GroupConnMap[c.GroupId] = append(cm.UidConnMap[c.GroupId], c)
 	}
-	cm.All = append(cm.All, c)
+	e := cm.All.PushFront(c)
+	c.element = e
 }
 
 func (cm *DefaultConnMgr) GetConnByUid(uid string) []*Conn {
-	//TODO implement me
-	panic("implement me")
+	return cm.UidConnMap[uid]
 }
 
 func (cm *DefaultConnMgr) GetConnByGroupId(groupId string) []*Conn {
-	//TODO implement me
-	panic("implement me")
+	return cm.GroupConnMap[groupId]
 }
 
 func (cm *DefaultConnMgr) Del(conn *Conn) {
@@ -152,14 +141,15 @@ func (cm *DefaultConnMgr) Del(conn *Conn) {
 	defer cm.mux.Unlock()
 	delete(cm.UidConnMap, conn.Uid)
 	delete(cm.GroupConnMap, conn.GroupId)
+	cm.All.Remove(conn.element)
 }
 
-func SetPongHandler(f func(conn *Conn)) {
-	pongHandler = f
+func SetSendPongFunc(f func(conn *Conn, data string)) {
+	sendPong = f
 }
 
-func SetPingHandler(f func(conn *Conn)) {
-	pingHandler = f
+func SetSendPingFunc(f func(conn *Conn)) {
+	sendPing = f
 }
 
 func SetDataHandler(f func(conn *Conn, data []byte, wsMsgType int)) {
@@ -172,10 +162,6 @@ func SetRouterMgr(r RouterMgr) {
 
 func GetRouterMgr() RouterMgr {
 	return routerMgr
-}
-
-func SetRequestHandler(f func(req *Request)) {
-	requestHandler = f
 }
 
 func SetAuthHandler(f func(data []byte) (*AuthMsg, bool)) {

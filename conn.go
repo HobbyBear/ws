@@ -1,9 +1,10 @@
 package ws
 
 import (
+	"container/list"
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 	"go.uber.org/atomic"
-	"log"
 	"sync"
 	"time"
 )
@@ -16,25 +17,37 @@ type Conn struct {
 	stopSig         atomic.Int32
 	stop            chan int
 	server          *Server
-	sendBuffer      chan Msg
-	readBuffer      chan Msg
+	readBuffer      chan RawMsg
+	sendBuffer      chan *RawMsg
 	GroupId         string
 	pingTimer       *time.Timer
 	lastReceiveTime time.Time
+	element         *list.Element
 }
 
-type Msg struct {
-	MsgType int
-	Data    []byte
+type RawMsg struct {
+	WsMsgType int
+	Data      []byte
+	DeadLine  time.Time
 }
 
-func (c *Conn) WriteMsg(data Msg) {
+func (m *RawMsg) write(conn *Conn) error {
+	if isControl(m.WsMsgType) {
+		return conn.wsConn.WriteControl(m.WsMsgType, m.Data, m.DeadLine)
+	}
+	if isData(m.WsMsgType) {
+		return conn.wsConn.WriteMessage(m.WsMsgType, m.Data)
+	}
+	return errors.New("websocket: bad write message type")
+}
+
+func (c *Conn) WriteMsg(data *RawMsg) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+	if c.stopSig.Load() == 1 {
+		return
+	}
 	c.sendBuffer <- data
-
-}
-
-func (c *Conn) ReadMsg() Msg {
-	return <-c.readBuffer
 }
 
 func (c *Conn) KeepAlive() {
@@ -46,8 +59,7 @@ func (c *Conn) KeepAlive() {
 				if time.Now().Sub(c.lastReceiveTime) > 10*time.Second {
 					c.Close()
 				} else {
-					pingHandler(c)
-					Infof("send ping msg cid=%s", c.Cid)
+					sendPing(c)
 				}
 			case <-c.stop:
 				c.pingTimer.Stop()
@@ -57,20 +69,8 @@ func (c *Conn) KeepAlive() {
 	}()
 }
 
-func (c *Conn) ReadMessage() (messageType int, p []byte, err error) {
-	c.pingTimer.Reset(c.server.PingInterval)
-	c.lastReceiveTime = time.Now()
-	return c.wsConn.ReadMessage()
-}
-
-func (c *Conn) ReadJson(v interface{}) (err error) {
-	c.pingTimer.Reset(c.server.PingInterval)
-	c.lastReceiveTime = time.Now()
-	return c.wsConn.ReadJSON(v)
-}
-
 func (c *Conn) Auth() bool {
-	_, message, _ := c.ReadMessage()
+	_, message, _ := c.wsConn.ReadMessage()
 	authMsg, success := authHandler(message)
 	if !success {
 		return false
@@ -91,28 +91,13 @@ func (c *Conn) Close() {
 	callOnConnStateChange(c, StateClosed)
 	c.stop <- 1
 	close(c.sendBuffer)
-	close(c.readBuffer)
 	c.wsConn.Close()
 }
 
-func (c *Conn) ShutDown() {
-	if c.stopSig.Load() == 1 {
-		return
-	}
-	c.stopSig.Store(1)
-	c.mux.Lock()
-	defer c.mux.Unlock()
-	defaultConnMgr.Del(c)
-	callOnConnStateChange(c, StateClosed)
-	c.stop <- 1
-	close(c.sendBuffer)
-	close(c.readBuffer)
-	for msg := range c.sendBuffer {
-		err := c.wsConn.WriteMessage(msg.MsgType, msg.Data)
-		if err != nil {
-			log.Println(err)
-			break
-		}
-	}
-	c.wsConn.Close()
+func isControl(frameType int) bool {
+	return frameType == websocket.CloseMessage || frameType == websocket.PingMessage || frameType == websocket.PongMessage
+}
+
+func isData(frameType int) bool {
+	return frameType == websocket.TextMessage || frameType == websocket.BinaryMessage
 }
