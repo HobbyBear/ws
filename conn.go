@@ -17,12 +17,11 @@ type Conn struct {
 	stopSig         atomic.Int32
 	stop            chan int
 	server          *Server
-	readBuffer      chan RawMsg
-	sendBuffer      chan *RawMsg
 	GroupId         string
-	pingTimer       *time.Timer
 	lastReceiveTime time.Time
 	element         *list.Element
+	tickElement     *list.Element
+	topic           string
 }
 
 type RawMsg struct {
@@ -31,66 +30,32 @@ type RawMsg struct {
 	DeadLine  time.Time
 }
 
-func (m *RawMsg) write(conn *Conn) error {
-	if isControl(m.WsMsgType) {
-		return conn.wsConn.WriteControl(m.WsMsgType, m.Data, m.DeadLine)
+func (c *Conn) WriteMsg(data *RawMsg) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+	if c.stopSig.Load() == 1 {
+		return nil
 	}
-	if isData(m.WsMsgType) {
-		return conn.wsConn.WriteMessage(m.WsMsgType, m.Data)
+	if isControl(data.WsMsgType) {
+		return c.wsConn.WriteControl(data.WsMsgType, data.Data, data.DeadLine)
+	}
+	if isData(data.WsMsgType) {
+		return c.wsConn.WriteMessage(data.WsMsgType, data.Data)
 	}
 	return errors.New("websocket: bad write message type")
 }
 
-func (c *Conn) WriteMsg(data *RawMsg) {
-	c.mux.Lock()
-	defer c.mux.Unlock()
-	if c.stopSig.Load() == 1 {
-		return
-	}
-	c.sendBuffer <- data
-}
-
-func (c *Conn) KeepAlive() {
-	go func() {
-		for {
-			c.pingTimer.Reset(c.server.PingInterval)
-			select {
-			case <-c.pingTimer.C:
-				if time.Now().Sub(c.lastReceiveTime) > 10*time.Second {
-					c.Close()
-				} else {
-					sendPing(c)
-				}
-			case <-c.stop:
-				c.pingTimer.Stop()
-				return
-			}
-		}
-	}()
-}
-
-func (c *Conn) Auth() bool {
-	_, message, _ := c.wsConn.ReadMessage()
-	authMsg, success := authHandler(message)
-	if !success {
-		return false
-	}
-	c.Uid = authMsg.Uid
-	c.GroupId = authMsg.GroupId
-	return true
-}
-
-func (c *Conn) Close() {
+func (c *Conn) Close(reason string) {
 	if c.stopSig.Load() == 1 {
 		return
 	}
 	c.mux.Lock()
 	defer c.mux.Unlock()
 	c.stopSig.Store(1)
+	c.server.ConnNum.Sub(1)
 	defaultConnMgr.Del(c)
-	callOnConnStateChange(c, StateClosed)
+	callOnConnStateChange(c, StateClosed, reason)
 	c.stop <- 1
-	close(c.sendBuffer)
 	c.wsConn.Close()
 }
 

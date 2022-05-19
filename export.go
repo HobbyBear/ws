@@ -2,22 +2,38 @@ package ws
 
 import "github.com/gorilla/websocket"
 
-func SendMsgToConn(uid string, data []byte) {
-	connList := defaultConnMgr.GetConnByUid(uid)
-	for _, conn := range connList {
-		conn.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Data: data})
-	}
-}
-
-func SendMsgToRoom(groupId string, data []byte) {
-	connList := defaultConnMgr.GetConnByGroupId(groupId)
-	for _, conn := range connList {
-		conn.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Data: data})
-	}
-}
-
 func SendMsgToAll(data []byte) {
 	for _, conn := range defaultConnMgr.GetAllConn() {
 		conn.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Data: data})
+	}
+}
+
+func SendMsg(data []byte, uid, groupId, topic string, ack bool) {
+	var (
+		connList []*Conn
+	)
+	if len(uid) != 0 {
+		connList = defaultConnMgr.GetConnByUid(uid)
+	}
+	if len(uid) == 0 && len(groupId) != 0 {
+		connList = defaultConnMgr.GetConnByGroupId(groupId)
+	}
+	if len(uid) == 0 && len(groupId) == 0 && len(topic) != 0 {
+		connList = defaultConnMgr.GetAllConn()
+	}
+	for _, conn := range connList {
+		c := conn
+		if len(uid) != 0 && conn.Uid != uid {
+			continue
+		}
+		if len(groupId) != 0 && conn.GroupId != groupId {
+			continue
+		}
+		if len(topic) != 0 && conn.topic != topic {
+			continue
+		}
+		p.Submit(func() {
+			c.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Data: data})
+		})
 	}
 }

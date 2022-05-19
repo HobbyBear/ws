@@ -47,34 +47,31 @@ var (
 	}
 
 	dataHandler = func(conn *Conn, data []byte, wsMsgType int) {
-		var msg = &DataMsg{}
-		var json = jsoniter.ConfigCompatibleWithStandardLibrary
-		err := json.Unmarshal(data, msg)
+		var (
+			msg  = &DataMsg{}
+			json = jsoniter.ConfigCompatibleWithStandardLibrary
+			err  error
+		)
+		err = json.Unmarshal(data, msg)
 		if err != nil {
 			Errorf("data msg is invalid err=%s data=%s", err, string(data))
 			return
 		}
-		if handler := routerMgr.GetRouterByMsgId(msg.MsgId); handler != nil {
+
+		preDataHandler(conn, msg)
+		if handler := routerMgr.GetRouterByMsgId(msg.MsgType); handler != nil {
 			handler(&RouterHandlerReq{
 				Conn:    conn,
-				MsgId:   msg.MsgId,
+				MsgId:   msg.MsgType,
 				Content: msg.Content,
 				WsMsgId: wsMsgType,
 			})
 		}
-	}
-	authHandler = func(data []byte) (*AuthMsg, bool) {
-		var authMsg AuthMsg
-		var json = jsoniter.ConfigCompatibleWithStandardLibrary
-		err := json.Unmarshal(data, &authMsg)
-		if err != nil {
-			return nil, false
-		}
-		return &authMsg, true
+		postDataHandler(conn, msg)
 	}
 
-	callOnConnStateChange = func(c *Conn, state ConnState) {
-		Infof("连接状态: %s", state.String())
+	callOnConnStateChange = func(c *Conn, state ConnState, reason string) {
+
 	}
 
 	defaultConnMgr = &DefaultConnMgr{
@@ -86,11 +83,6 @@ var (
 
 	connMgr ConnMgr = defaultConnMgr
 )
-
-type AuthMsg struct {
-	Uid     string
-	GroupId string
-}
 
 type ConnMgr interface {
 	Del(c *Conn)
@@ -152,10 +144,6 @@ func SetSendPingFunc(f func(conn *Conn)) {
 	sendPing = f
 }
 
-func SetDataHandler(f func(conn *Conn, data []byte, wsMsgType int)) {
-	dataHandler = f
-}
-
 func SetRouterMgr(r RouterMgr) {
 	routerMgr = r
 }
@@ -164,11 +152,7 @@ func GetRouterMgr() RouterMgr {
 	return routerMgr
 }
 
-func SetAuthHandler(f func(data []byte) (*AuthMsg, bool)) {
-	authHandler = f
-}
-
-func SetCallOnConnStateChange(f func(c *Conn, state ConnState)) {
+func SetCallOnConnStateChange(f func(c *Conn, state ConnState, reason string)) {
 	callOnConnStateChange = f
 }
 

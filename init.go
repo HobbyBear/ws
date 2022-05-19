@@ -1,19 +1,25 @@
 package ws
 
 import (
+	"container/list"
 	"github.com/gorilla/websocket"
 	"net/http"
 	"sync"
-	"time"
 )
 
 func InitWs(addr string, options ...Option) *Server {
 	s := &Server{
-		Serv:         nil,
-		PingInterval: 3 * time.Second,
-		Upgrader:     &websocket.Upgrader{},
-		Logger:       defaultLogger,
-		wg:           sync.WaitGroup{},
+		Serv:     nil,
+		Upgrader: &websocket.Upgrader{},
+		Logger:   defaultLogger,
+		wg:       sync.WaitGroup{},
+		conTicker: &ConnTick{
+			mux:              sync.Mutex{},
+			TickList:         list.New(),
+			TickMap:          map[string]*Conn{},
+			WheelIntervalSec: 60,
+			TickExpireSec:    5 * 60,
+		},
 	}
 	s.Serv = &http.Server{
 		Addr:    addr,
@@ -22,5 +28,6 @@ func InitWs(addr string, options ...Option) *Server {
 	for _, op := range options {
 		op(s)
 	}
+	s.conTicker.Start()
 	return s
 }

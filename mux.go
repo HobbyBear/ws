@@ -27,28 +27,20 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		stopSig:         atomic.Int32{},
 		stop:            make(chan int, 1),
 		server:          m.server,
-		sendBuffer:      make(chan *RawMsg, 100),
 		GroupId:         "",
-		pingTimer:       time.NewTimer(m.server.PingInterval),
 		lastReceiveTime: time.Now(),
+		element:         nil,
+		tickElement:     nil,
+		topic:           "",
 	}
 
 	connMgr.Add(conn)
-	callOnConnStateChange(conn, StateNew)
+	callOnConnStateChange(conn, StateNew, "")
+	m.server.ConnNum.Add(1)
 	conn.wsConn.SetPingHandler(func(message string) error {
-		conn.lastReceiveTime = time.Now()
+		m.server.conTicker.AddTickConn(conn)
 		sendPong(conn, message)
 		return nil
 	})
-	conn.wsConn.SetPongHandler(func(message string) error {
-		conn.lastReceiveTime = time.Now()
-		return nil
-	})
-	conn.KeepAlive()
 	m.server.handleConn(conn)
-	//if conn.Auth() {
-	//	m.server.handleConn(conn)
-	//} else {
-	//	conn.Close()
-	//}
 }

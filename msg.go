@@ -2,26 +2,46 @@ package ws
 
 import (
 	"encoding/json"
+	"github.com/gorilla/websocket"
 )
 
 type DataMsg struct {
-	MsgId   string `json:"msg_id"`
-	Content []byte `json:"content"`
+	MsgType string `json:"msg_id,omitempty"`
+	Content []byte `json:"content,omitempty"`
+	Uid     string `json:"uid,omitempty"`
+	GroupId string `json:"groupId,omitempty"`
+	Topic   string `json:"topic,omitempty"`
+	Ack     int    `json:"ack,omitempty"`
+	AckId   int    `json:"ackId,omitempty"`
 }
-
-//var (
-//	dataMsgPool = sync.Pool{
-//		New: func() interface{} {
-//			return &DataMsg{}
-//		},
-//	}
-//)
-
-//func NewDataMsg() *DataMsg {
-//	return dataMsgPool.Get().(*DataMsg)
-//}
 
 func (d DataMsg) MarshalJSON() []byte {
 	data, _ := json.Marshal(d)
 	return data
+}
+
+// 一些预置的消息类型
+const (
+	SubMsgType   = "sub_topic" // 订阅的消息类型
+	Login        = "login"
+	UnSubMsgType = "un_sub_topic" // 取消订阅消息
+	AckOk        = "ack_ok"       // ack 确认消息
+)
+
+func preDataHandler(conn *Conn, msg *DataMsg) {
+	switch msg.MsgType {
+	case SubMsgType:
+		conn.topic = msg.Topic
+	case Login:
+		conn.Uid = msg.Uid
+		conn.GroupId = msg.GroupId
+	case UnSubMsgType:
+		conn.topic = ""
+	}
+}
+
+func postDataHandler(conn *Conn, msg *DataMsg) {
+	if msg.Ack == 1 {
+		conn.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Data: DataMsg{MsgType: AckOk, AckId: msg.AckId}.MarshalJSON()})
+	}
 }

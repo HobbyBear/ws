@@ -2,8 +2,10 @@ package ws
 
 import (
 	"context"
+	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/panjf2000/ants"
+	"go.uber.org/atomic"
 	"log"
 	"net/http"
 	"sync"
@@ -12,7 +14,7 @@ import (
 
 var (
 	// 换成自定义的是否会更快，因为这个库的线程池有些功能用不到
-	p, _ = ants.NewPool(10)
+	p, _ = ants.NewPool(1000)
 )
 
 type ConnState int
@@ -44,29 +46,52 @@ type Request struct {
 }
 
 type Server struct {
-	Serv         *http.Server
-	Upgrader     *websocket.Upgrader
-	Logger       Log
-	PingInterval time.Duration
-	wg           sync.WaitGroup
+	Serv      *http.Server
+	Upgrader  *websocket.Upgrader
+	Logger    Log
+	wg        sync.WaitGroup
+	ConnNum   atomic.Int32
+	conTicker *ConnTick
 }
 
 type Option func(s *Server)
 
-func Upgrader(upgrader *websocket.Upgrader) Option {
+func SetUpgrader(upgrader *websocket.Upgrader) Option {
 	return func(s *Server) {
 		s.Upgrader = upgrader
 	}
 }
 
-func Logger(logger Log) Option {
+func SetLogger(logger Log) Option {
 	return func(s *Server) {
 		s.Logger = logger
 	}
 }
 
+func SetTickInterval(intervalSec int) Option {
+	return func(s *Server) {
+		s.conTicker.WheelIntervalSec = intervalSec
+	}
+}
+
+func SetTickExpire(expireSec int) Option {
+	return func(s *Server) {
+		s.conTicker.TickExpireSec = expireSec
+	}
+}
+
 func (s *Server) Start() {
 	go s.Serv.ListenAndServe()
+	go func() {
+		timer := time.NewTimer(3 * time.Second)
+		for {
+			select {
+			case <-timer.C:
+				fmt.Println("连接数", s.ConnNum.Load())
+				timer.Reset(3 * time.Second)
+			}
+		}
+	}()
 }
 
 func (s *Server) ShutDown() {
@@ -84,19 +109,17 @@ func (s *Server) ShutDown() {
 	time.Sleep(500 * time.Millisecond)
 	allConn = connMgr.GetAllConn()
 	for _, conn := range allConn {
-		conn.Close()
+		conn.Close("服务器关闭")
 	}
 }
 
 func (s *Server) handleConn(conn *Conn) {
-	callOnConnStateChange(conn, StateActive)
+	callOnConnStateChange(conn, StateActive, "")
 	go func() {
 		for {
 			mt, message, err := conn.wsConn.ReadMessage()
-			// todo 应该对错误进行判断
 			if err != nil {
-				s.Logger.Debugf("conn read err=%s cid=%s", err, conn.Cid)
-				conn.Close()
+				conn.Close("读取消息失败" + err.Error())
 				return
 			}
 			err = p.Submit(func() {
@@ -106,19 +129,6 @@ func (s *Server) handleConn(conn *Conn) {
 			})
 			if err != nil {
 				log.Fatal(err)
-			}
-		}
-	}()
-
-	go func() {
-		for msg := range conn.sendBuffer {
-			if msg.WsMsgType == 0 {
-				return
-			}
-			err := msg.write(conn)
-			if err != nil {
-				log.Println("write:", err, string(msg.Data), msg.WsMsgType)
-				return
 			}
 		}
 	}()
