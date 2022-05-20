@@ -11,7 +11,7 @@ import (
 	"ws"
 )
 
-var addr = flag.String("addr", ":8080", "http service address")
+var addr = flag.String("addr", "192.168.64.12:8080", "http service address")
 
 func main() {
 	if err := agent.Listen(agent.Options{}); err != nil {
@@ -23,13 +23,13 @@ func main() {
 	ch := make(chan int)
 	s := ws.InitWs(*addr, ws.SetUpgrader(&websocket.Upgrader{}))
 	ws.GetRouterMgr().RegHandler("1", func(req *ws.RouterHandlerReq) {
-		err := req.Conn.WriteMsg(&ws.RawMsg{WsMsgType: websocket.TextMessage, Data: []byte("haha")})
+		err := req.Conn.WriteMsg(&ws.RawMsg{WsMsgType: websocket.TextMessage, Content: []byte("haha")})
 		if err != nil {
 			log.Println(err)
 		}
 	})
 	ws.SetSendPongFunc(func(conn *ws.Conn, data string) {
-		err := conn.WriteMsg(&ws.RawMsg{WsMsgType: websocket.PongMessage, Data: nil, DeadLine: time.Now().Add(3 * time.Second)})
+		err := conn.WriteMsg(&ws.RawMsg{WsMsgType: websocket.PongMessage, Content: nil, DeadLine: time.Now().Add(3 * time.Second)})
 		if err != nil {
 			log.Println(err)
 		}

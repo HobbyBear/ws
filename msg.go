@@ -12,7 +12,8 @@ type DataMsg struct {
 	GroupId string `json:"groupId,omitempty"`
 	Topic   string `json:"topic,omitempty"`
 	Ack     int    `json:"ack,omitempty"`
-	AckId   int    `json:"ackId,omitempty"`
+	// todo ack 机制
+	AckId int `json:"ackId,omitempty"`
 }
 
 func (d DataMsg) MarshalJSON() []byte {
@@ -37,11 +38,14 @@ func preDataHandler(conn *Conn, msg *DataMsg) {
 		conn.GroupId = msg.GroupId
 	case UnSubMsgType:
 		conn.topic = ""
+	case AckOk:
+		// todo 根据id对暂存的ack消息做删除操作
+
 	}
 }
 
 func postDataHandler(conn *Conn, msg *DataMsg) {
 	if msg.Ack == 1 {
-		conn.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Data: DataMsg{MsgType: AckOk, AckId: msg.AckId}.MarshalJSON()})
+		conn.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Content: DataMsg{MsgType: AckOk, AckId: msg.AckId}.MarshalJSON()})
 	}
 }

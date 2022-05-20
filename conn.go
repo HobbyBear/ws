@@ -25,9 +25,10 @@ type Conn struct {
 }
 
 type RawMsg struct {
-	WsMsgType int
-	Data      []byte
-	DeadLine  time.Time
+	WsMsgType int       `json:"-"`
+	MsgType   string    `json:"msg_id,omitempty"`
+	Content   []byte    `json:"content,omitempty"`
+	DeadLine  time.Time `json:"-"`
 }
 
 func (c *Conn) WriteMsg(data *RawMsg) error {
@@ -37,10 +38,10 @@ func (c *Conn) WriteMsg(data *RawMsg) error {
 		return nil
 	}
 	if isControl(data.WsMsgType) {
-		return c.wsConn.WriteControl(data.WsMsgType, data.Data, data.DeadLine)
+		return c.wsConn.WriteControl(data.WsMsgType, data.Content, data.DeadLine)
 	}
 	if isData(data.WsMsgType) {
-		return c.wsConn.WriteMessage(data.WsMsgType, data.Data)
+		return c.wsConn.WriteMessage(data.WsMsgType, data.Content)
 	}
 	return errors.New("websocket: bad write message type")
 }

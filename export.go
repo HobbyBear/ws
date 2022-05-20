@@ -4,11 +4,11 @@ import "github.com/gorilla/websocket"
 
 func SendMsgToAll(data []byte) {
 	for _, conn := range defaultConnMgr.GetAllConn() {
-		conn.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Data: data})
+		conn.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Content: data})
 	}
 }
 
-func SendMsg(data []byte, uid, groupId, topic string, ack bool) {
+func SendMsg(data []byte, uid, groupId, topic string) {
 	var (
 		connList []*Conn
 	)
@@ -33,7 +33,7 @@ func SendMsg(data []byte, uid, groupId, topic string, ack bool) {
 			continue
 		}
 		p.Submit(func() {
-			c.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Data: data})
+			c.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Content: data})
 		})
 	}
 }
