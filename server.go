@@ -111,7 +111,7 @@ func (s *Server) Start() {
 				// handle error
 				log.Fatal(err)
 			}
-			desc := netpoll.Must(netpoll.HandleReadOnce(conn))
+			desc := netpoll.Must(netpoll.HandleRead(conn))
 			s.Poll.Start(desc, func(event netpoll.Event) {
 				fmt.Println(event.String())
 				if event&netpoll.EventRead == 0 {
@@ -132,6 +132,7 @@ func (s *Server) Start() {
 				if header.Masked {
 					ws.Cipher(payload, header.Mask, 0)
 				}
+				fmt.Println(string(payload))
 				// Reset the Masked flag, server frames must not be masked as
 				// RFC6455 says.
 				header.Masked = false
@@ -148,7 +149,10 @@ func (s *Server) Start() {
 				if header.OpCode == ws.OpClose {
 					return
 				}
-				s.Poll.Resume(desc)
+				err = s.Poll.Resume(desc)
+				if err != nil {
+					log.Fatal(err)
+				}
 			})
 		}
 	}()
