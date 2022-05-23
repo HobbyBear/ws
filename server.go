@@ -2,11 +2,15 @@ package ws
 
 import (
 	"context"
+	"easygo/netpoll"
 	"fmt"
+	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	"github.com/panjf2000/ants"
 	"go.uber.org/atomic"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -52,6 +56,8 @@ type Server struct {
 	wg        sync.WaitGroup
 	ConnNum   atomic.Int32
 	conTicker *ConnTick
+	Listener  net.Listener
+	Poll      netpoll.Poller
 }
 
 type Option func(s *Server)
@@ -81,15 +87,69 @@ func SetTickExpire(expireSec int) Option {
 }
 
 func (s *Server) Start() {
-	go s.Serv.ListenAndServe()
+	//go s.Serv.ListenAndServe()
+	//go func() {
+	//	timer := time.NewTimer(3 * time.Second)
+	//	for {
+	//		select {
+	//		case <-timer.C:
+	//			fmt.Println("连接数", s.ConnNum.Load())
+	//			timer.Reset(3 * time.Second)
+	//		}
+	//	}
+	//}()
 	go func() {
-		timer := time.NewTimer(3 * time.Second)
+		s.Listener, _ = net.Listen("tcp", "localhost:8080")
 		for {
-			select {
-			case <-timer.C:
-				fmt.Println("连接数", s.ConnNum.Load())
-				timer.Reset(3 * time.Second)
+			conn, err := s.Listener.Accept()
+			if err != nil {
+				log.Printf("Listener.Accept err=%s \n", err)
+				return
 			}
+			_, err = ws.Upgrade(conn)
+			if err != nil {
+				// handle error
+				log.Fatal(err)
+			}
+			desc := netpoll.Must(netpoll.HandleReadOnce(conn))
+			s.Poll.Start(desc, func(event netpoll.Event) {
+				fmt.Println(event.String())
+				if event&netpoll.EventRead == 0 {
+					return
+				}
+				header, err := ws.ReadHeader(conn)
+				if err != nil {
+					// handle error
+					log.Fatal(err)
+				}
+
+				payload := make([]byte, header.Length)
+				_, err = io.ReadFull(conn, payload)
+				if err != nil {
+					// handle error
+					log.Fatal(err)
+				}
+				if header.Masked {
+					ws.Cipher(payload, header.Mask, 0)
+				}
+				// Reset the Masked flag, server frames must not be masked as
+				// RFC6455 says.
+				header.Masked = false
+
+				if err := ws.WriteHeader(conn, header); err != nil {
+					// handle error
+					log.Fatal(err)
+				}
+				if _, err := conn.Write(payload); err != nil {
+					// handle error
+					log.Fatal(err)
+				}
+
+				if header.OpCode == ws.OpClose {
+					return
+				}
+				s.Poll.Resume(desc)
+			})
 		}
 	}()
 }
