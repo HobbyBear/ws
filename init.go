@@ -2,19 +2,20 @@ package ws
 
 import (
 	"container/list"
-	"easygo/netpoll"
 	"github.com/gorilla/websocket"
-	"log"
+	netpoll2 "github.com/panjf2000/gnet/netpoll"
+	"net"
 	"net/http"
 	"sync"
 )
 
 func InitWs(addr string, options ...Option) *Server {
 	s := &Server{
-		Serv:     nil,
-		Upgrader: &websocket.Upgrader{},
-		Logger:   defaultLogger,
-		wg:       sync.WaitGroup{},
+		Serv:      nil,
+		Upgrader:  &websocket.Upgrader{},
+		Logger:    defaultLogger,
+		wg:        sync.WaitGroup{},
+		fdConnMap: map[int]net.Conn{},
 		conTicker: &ConnTick{
 			mux:              sync.Mutex{},
 			TickList:         list.New(),
@@ -30,11 +31,7 @@ func InitWs(addr string, options ...Option) *Server {
 	for _, op := range options {
 		op(s)
 	}
-	s.Poll, _ = netpoll.New(&netpoll.Config{
-		OnWaitError: func(err error) {
-			log.Println(err)
-		},
-	})
+	s.Poll, _ = netpoll2.OpenPoller()
 	s.conTicker.Start()
 	return s
 }
