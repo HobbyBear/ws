@@ -11,7 +11,7 @@ import (
 	"ws"
 )
 
-var addr = flag.String("addr", "192.168.64.12:8080", "http service address")
+var addr = flag.String("addr", "127.0.0.1:8080", "http service address")
 
 func main() {
 	if err := agent.Listen(agent.Options{}); err != nil {

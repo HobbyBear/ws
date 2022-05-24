@@ -17,15 +17,14 @@ func main() {
 	flag.Parse()
 	log.SetFlags(0)
 
-	u := url.URL{Scheme: "ws", Host: "192.168.64.12:8080", Path: "/"}
+	u := url.URL{Scheme: "ws", Host: "127.0.0.1:8080", Path: "/"}
 	log.Printf("connecting to %s", u.String())
-	for i := 1; i <= 30000; i++ {
+	for i := 1; i <= 20000; i++ {
 		go func() {
 			var (
 				c   *websocket.Conn
 				err error
 			)
-			//time.Sleep(30 * time.Millisecond)
 			commfunc.Retry(func() bool {
 				c, _, err = websocket.DefaultDialer.Dial(u.String(), nil)
 				if err != nil {
@@ -38,50 +37,61 @@ func main() {
 				return
 			}
 			time.Sleep(time.Duration(rand.Int31n(10)) * time.Second)
+			//for i := 1; i <= 2000; i++ {
+			//	p.Submit(func() {
+			//		for {
+			//			err := c.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second*2))
+			//			if err != nil {
+			//				log.Println(err, "客户端心跳")
+			//
+			//			}
+			//			rand.Seed(time.Now().Unix())
+			//			time.Sleep(time.Second * 3)
+			//		}
+			//	})
+			//}
+			//p.Submit(func() {
+			//	for {
+			//		mt, data, err := c.ReadMessage()
+			//		if err != nil {
+			//			if err.Error() != "websocket: close 1006 (abnormal closure): unexpected EOF" {
+			//				log.Println(err, string(data), mt)
+			//			}
+			//			time.Sleep(2 * time.Second)
+			//		}
+			//		fmt.Println(string(data))
+			//	}
+			//})
+			//p.Submit(func() {
+			//	for {
+			//		err := c.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second*2))
+			//		if err != nil {
+			//			log.Println(err, "客户端心跳")
+			//
+			//		}
+			//		rand.Seed(time.Now().Unix())
+			//		time.Sleep(time.Second * 3)
+			//	}
+			//})
 			go func() {
 				for {
-					mt, data, err := c.ReadMessage()
-					if err != nil {
-						if err.Error() != "websocket: close 1006 (abnormal closure): unexpected EOF" {
-							log.Println(err, string(data), mt)
-						}
-						time.Sleep(2 * time.Second)
-					}
-				}
-			}()
-			go func() {
-				for {
-					err := c.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second*2))
-					if err != nil {
-						log.Println(err, "客户端心跳")
 
+					data := ws.DataMsg{
+						MsgType: "1",
+						Content: []byte("haha"),
 					}
-					rand.Seed(time.Now().Unix())
-					time.Sleep(time.Second * 3)
+					err := c.WriteMessage(websocket.TextMessage, data.MarshalJSON())
+					if err != nil {
+						log.Println("write:", err)
+						return
+					}
+					time.Sleep(2 * time.Second)
 				}
 			}()
-			go func() {
-				timer := time.NewTimer(5 * time.Second)
-				timer.Reset(time.Duration(rand.Int31n(10)) * time.Second)
-				for {
-					select {
-					case <-timer.C:
-						data := ws.DataMsg{
-							MsgType: "1",
-							Content: []byte("haha"),
-						}
-						err := c.WriteMessage(websocket.TextMessage, data.MarshalJSON())
-						if err != nil {
-							log.Println("write:", err)
-							return
-						}
-						timer.Reset(time.Duration(rand.Int31n(10)) * time.Second)
-					}
-				}
-			}()
-
 		}()
+
 	}
+
 	fmt.Println("连接client finished")
 	time.Sleep(10 * time.Hour)
 }

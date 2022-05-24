@@ -28,6 +28,6 @@ func InitWs(addr string, options ...Option) *Server {
 	for _, op := range options {
 		op(s)
 	}
-	s.conTicker.Start()
+	//s.conTicker.Start()
 	return s
 }
