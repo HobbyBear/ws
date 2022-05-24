@@ -8,12 +8,27 @@ import (
 	"math/rand"
 	"net/url"
 	"nfw/nfw_base/utils/commfunc"
+	"os"
+	"syscall"
 	"time"
 	"ws"
 )
 
+func RedirectStderr() (err error) {
+	logFile, err := os.OpenFile("./test-error.log", os.O_WRONLY|os.O_CREATE|os.O_SYNC|os.O_APPEND, 0644)
+	if err != nil {
+		return
+	}
+	err = syscall.Dup2(int(logFile.Fd()), int(os.Stderr.Fd()))
+	if err != nil {
+		return
+	}
+	return
+}
+
 func main() {
 
+	RedirectStderr()
 	flag.Parse()
 	log.SetFlags(0)
 
@@ -74,6 +89,13 @@ func main() {
 			//	}
 			//})
 			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						fmt.Println(err)
+						return
+					}
+				}()
+
 				for {
 
 					data := ws.DataMsg{
