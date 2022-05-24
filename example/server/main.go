@@ -28,7 +28,7 @@ func main() {
 			log.Println(err)
 		}
 	})
-	s.Start()
+	s.Start(false)
 
 	time.Sleep(30 * time.Second)
 	start := time.Now()

@@ -2,19 +2,17 @@ package ws
 
 import (
 	"bufio"
-	"easygo/netpoll"
-	"encoding/binary"
 	"fmt"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	"github.com/panjf2000/ants"
 	"github.com/pborman/uuid"
 	"go.uber.org/atomic"
-	"io"
 	"log"
 	"net"
 	"sync"
 	"time"
+	"ws/internal/netpoll"
 	"ws/internal/trylock"
 )
 
@@ -59,6 +57,7 @@ type Server struct {
 	Listener  net.Listener
 	PollList  []netpoll.Poller
 	Seq       int
+	Addr      string
 }
 
 type Option func(s *Server)
@@ -123,7 +122,7 @@ func (s *Server) startListen() {
 	}
 }
 
-func (s *Server) Start() {
+func (s *Server) Start(block bool) {
 	go func() {
 		timer := time.NewTimer(3 * time.Second)
 		for {
@@ -134,12 +133,15 @@ func (s *Server) Start() {
 			}
 		}
 	}()
+	if block {
+		s.startListen()
+		return
+	}
 	go s.startListen()
 }
 
 func (s *Server) ShutDown() {
 	// 关闭listener
-	// todo poll 关闭
 	s.Listener.Close()
 	// 发送关闭帧
 	allConn := connMgr.GetAllConn()
@@ -155,6 +157,9 @@ func (s *Server) ShutDown() {
 	for _, conn := range allConn {
 		conn.Close("服务器关闭")
 	}
+	for _, poll := range s.PollList {
+		poll.Close()
+	}
 }
 
 func (s *Server) handleConn(conn *Conn) {
@@ -162,6 +167,8 @@ func (s *Server) handleConn(conn *Conn) {
 	desc := netpoll.Must(netpoll.Handle(rawConn, netpoll.EventRead))
 	poller := s.PollList[s.Seq%7]
 	s.Seq++
+	conn.poll = poller
+	conn.pollDesc = desc
 	poller.Start(desc, func(event netpoll.Event) {
 		callOnConnStateChange(conn, StateActive, "")
 		analyzeProtocolPool.Submit(func() {
@@ -173,27 +180,18 @@ func (s *Server) handleConn(conn *Conn) {
 			if event&netpoll.EventRead == 0 {
 				return
 			}
-			header, err := ReadHeader(conn.reader)
+			header, payload, err := getProtocolContent(conn.reader)
 			if err != nil {
-				// handle error
-				s.ConnNum.Dec()
-				rawConn.Close()
-				poller.Stop(desc)
+				conn.Close(err.Error())
 				return
 			}
-
-			payload, err := io.ReadAll(io.LimitReader(conn.reader, header.Length))
-			if err != nil {
-				// handle error
-				s.ConnNum.Dec()
-				rawConn.Close()
-				poller.Stop(desc)
-				return
-			}
+			s.conTicker.AddTickConn(conn)
 			if header.OpCode == ws.OpClose {
-				s.ConnNum.Dec()
-				rawConn.Close()
-				poller.Stop(desc)
+				conn.Close("对端主动关闭")
+				return
+			}
+			if header.OpCode == ws.OpPing {
+				sendPing(conn)
 				return
 			}
 			if header.Masked {
@@ -204,82 +202,4 @@ func (s *Server) handleConn(conn *Conn) {
 			})
 		})
 	})
-}
-
-const (
-	bit0 = 0x80
-)
-
-// ReadHeader reads a frame header from r.
-func ReadHeader(r *bufio.Reader) (h ws.Header, err error) {
-
-	// Make slice of bytes with capacity 12 that could hold any header.
-	//
-	// The maximum header size is 14, but due to the 2 hop reads,
-	// after first hop that reads first 2 constant bytes, we could reuse 2 bytes.
-	// So 14 - 2 = 12.
-
-	// Prepare to hold first 2 bytes to choose size of next read.
-	bts, err := io.ReadAll(io.LimitReader(r, 2))
-	if err != nil || len(bts) == 0 {
-		return
-	}
-
-	h.Fin = bts[0]&bit0 != 0
-	h.Rsv = (bts[0] & 0x70) >> 4
-	h.OpCode = ws.OpCode(bts[0] & 0x0f)
-
-	var extra int
-
-	if bts[1]&bit0 != 0 {
-		h.Masked = true
-		extra += 4
-	}
-
-	length := bts[1] & 0x7f
-	switch {
-	case length < 126:
-		h.Length = int64(length)
-
-	case length == 126:
-		extra += 2
-
-	case length == 127:
-		extra += 8
-
-	default:
-		err = ws.ErrHeaderLengthUnexpected
-		return
-	}
-
-	if extra == 0 {
-		return
-	}
-
-	// Increase len of bts to extra bytes need to read.
-	// Overwrite first 2 bytes that was read before.
-	bts, err = io.ReadAll(io.LimitReader(r, int64(extra)))
-	if err != nil {
-		return
-	}
-
-	switch {
-	case length == 126:
-		h.Length = int64(binary.BigEndian.Uint16(bts[:2]))
-		bts = bts[2:]
-
-	case length == 127:
-		if bts[0]&0x80 != 0 {
-			err = ws.ErrHeaderLengthMSB
-			return
-		}
-		h.Length = int64(binary.BigEndian.Uint64(bts[:8]))
-		bts = bts[8:]
-	}
-
-	if h.Masked {
-		copy(h.Mask[:], bts)
-	}
-
-	return
 }

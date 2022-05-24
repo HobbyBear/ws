@@ -10,6 +10,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"ws/internal/netpoll"
 	"ws/internal/trylock"
 )
 
@@ -29,6 +30,8 @@ type Conn struct {
 	reader          *bufio.Reader
 	writer          *bufio.Writer
 	protocolLock    *trylock.Mutex // 解析协议时要用到的锁，防止epoll 多次epoll多次通知
+	poll            netpoll.Poller
+	pollDesc        *netpoll.Desc
 }
 
 type RawMsg struct {
@@ -66,6 +69,7 @@ func (c *Conn) Close(reason string) {
 	defaultConnMgr.Del(c)
 	callOnConnStateChange(c, StateClosed, reason)
 	c.stop <- 1
+	c.poll.Stop(c.pollDesc)
 	c.rawConn.Close()
 }
 

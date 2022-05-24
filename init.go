@@ -2,10 +2,10 @@ package ws
 
 import (
 	"container/list"
-	"easygo/netpoll"
 	"log"
 	"runtime"
 	"sync"
+	"ws/internal/netpoll"
 )
 
 func InitWs(addr string, options ...Option) *Server {
@@ -19,6 +19,7 @@ func InitWs(addr string, options ...Option) *Server {
 			WheelIntervalSec: 60,
 			TickExpireSec:    5 * 60,
 		},
+		Addr: addr,
 	}
 	for _, op := range options {
 		op(s)
@@ -31,6 +32,6 @@ func InitWs(addr string, options ...Option) *Server {
 			},
 		})
 	}
-	//s.conTicker.Start()
+	s.conTicker.Start()
 	return s
 }
