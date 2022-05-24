@@ -154,7 +154,7 @@ func (s *Server) ShutDown() {
 
 func (s *Server) handleConn(conn *Conn) {
 	rawConn := conn.rawConn
-	desc := netpoll.Must(netpoll.HandleReadOnce(rawConn))
+	desc := netpoll.Must(netpoll.HandleRead(rawConn))
 	poller := s.PollList[s.Seq%7]
 	s.Seq++
 	poller.Start(desc, func(event netpoll.Event) {
@@ -192,13 +192,13 @@ func (s *Server) handleConn(conn *Conn) {
 			}
 			dataHandler(conn, payload, header.OpCode)
 
-			err = poller.Resume(desc)
-			if err != nil {
-				s.ConnNum.Dec()
-				rawConn.Close()
-				poller.Stop(desc)
-				return
-			}
+			//err = poller.Resume(desc)
+			//if err != nil {
+			//	s.ConnNum.Dec()
+			//	rawConn.Close()
+			//	poller.Stop(desc)
+			//	return
+			//}
 		})
 	})
 }
