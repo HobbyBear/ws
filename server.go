@@ -81,7 +81,7 @@ func SetTickExpire(expireSec int) Option {
 }
 
 func (s *Server) startListen() {
-	s.Listener, _ = net.Listen("tcp", "localhost:8080")
+	s.Listener, _ = net.Listen("tcp", s.Addr)
 	for {
 		rawConn, err := s.Listener.Accept()
 		if err != nil {
