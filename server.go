@@ -88,6 +88,9 @@ func (s *Server) Start() {
 			select {
 			case <-timer.C:
 				fmt.Println("连接数", s.ConnNum.Load())
+				if count.Load() != 0 {
+					fmt.Println("消耗时间", total.Load()/count.Load())
+				}
 				timer.Reset(3 * time.Second)
 			}
 		}
@@ -113,15 +116,23 @@ func (s *Server) ShutDown() {
 	}
 }
 
+var (
+	total = atomic.NewInt64(0)
+	count = atomic.NewInt64(0)
+)
+
 func (s *Server) handleConn(conn *Conn) {
 	callOnConnStateChange(conn, StateActive, "")
 	go func() {
 		for {
+			start := time.Now()
 			mt, message, err := conn.wsConn.ReadMessage()
 			if err != nil {
 				conn.Close("读取消息失败" + err.Error())
 				return
 			}
+			count.Inc()
+			total.Add(time.Now().Sub(start).Milliseconds())
 			err = p.Submit(func() {
 				s.wg.Add(1)
 				defer s.wg.Done()
