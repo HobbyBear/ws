@@ -34,7 +34,7 @@ func main() {
 
 	u := url.URL{Scheme: "ws", Host: "127.0.0.1:8080", Path: "/"}
 	log.Printf("connecting to %s", u.String())
-	for i := 1; i <= 20000; i++ {
+	for i := 1; i <= 10000; i++ {
 		go func() {
 			var (
 				c   *websocket.Conn
