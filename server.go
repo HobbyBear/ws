@@ -55,7 +55,8 @@ type Server struct {
 	ConnNum   atomic.Int32
 	conTicker *ConnTick
 	Listener  net.Listener
-	Poll      netpoll.Poller
+	PollList  []netpoll.Poller
+	Seq       int
 }
 
 type Option func(s *Server)
@@ -154,7 +155,9 @@ func (s *Server) ShutDown() {
 func (s *Server) handleConn(conn *Conn) {
 	rawConn := conn.rawConn
 	desc := netpoll.Must(netpoll.HandleReadOnce(rawConn))
-	s.Poll.Start(desc, func(event netpoll.Event) {
+	poller := s.PollList[s.Seq%7]
+	s.Seq++
+	poller.Start(desc, func(event netpoll.Event) {
 		callOnConnStateChange(conn, StateActive, "")
 		p.Submit(func() {
 			if event&netpoll.EventRead == 0 {
@@ -165,7 +168,7 @@ func (s *Server) handleConn(conn *Conn) {
 				// handle error
 				s.ConnNum.Dec()
 				rawConn.Close()
-				s.Poll.Stop(desc)
+				poller.Stop(desc)
 				return
 			}
 
@@ -174,13 +177,13 @@ func (s *Server) handleConn(conn *Conn) {
 				// handle error
 				s.ConnNum.Dec()
 				rawConn.Close()
-				s.Poll.Stop(desc)
+				poller.Stop(desc)
 				return
 			}
 			if header.OpCode == ws.OpClose {
 				s.ConnNum.Dec()
 				rawConn.Close()
-				s.Poll.Stop(desc)
+				poller.Stop(desc)
 				return
 			}
 			if header.Masked {
@@ -188,11 +191,11 @@ func (s *Server) handleConn(conn *Conn) {
 			}
 			dataHandler(conn, payload, header.OpCode)
 
-			err = s.Poll.Resume(desc)
+			err = poller.Resume(desc)
 			if err != nil {
 				s.ConnNum.Dec()
 				rawConn.Close()
-				s.Poll.Stop(desc)
+				poller.Stop(desc)
 				return
 			}
 		})
