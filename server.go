@@ -130,9 +130,6 @@ func (s *Server) Start() {
 			select {
 			case <-timer.C:
 				fmt.Println("连接数", s.ConnNum.Load())
-				if count.Load() != 0 {
-					fmt.Println("解析协议时间", total.Load()/count.Load())
-				}
 				timer.Reset(3 * time.Second)
 			}
 		}
@@ -160,11 +157,6 @@ func (s *Server) ShutDown() {
 	}
 }
 
-var (
-	total = atomic.NewInt64(0)
-	count = atomic.NewInt64(0)
-)
-
 func (s *Server) handleConn(conn *Conn) {
 	rawConn := conn.rawConn
 	desc := netpoll.Must(netpoll.Handle(rawConn, netpoll.EventRead))
@@ -181,7 +173,6 @@ func (s *Server) handleConn(conn *Conn) {
 			if event&netpoll.EventRead == 0 {
 				return
 			}
-			start := time.Now()
 			header, err := ReadHeader(conn.reader)
 			if err != nil {
 				// handle error
@@ -192,8 +183,6 @@ func (s *Server) handleConn(conn *Conn) {
 			}
 
 			payload, err := io.ReadAll(io.LimitReader(conn.reader, header.Length))
-			count.Inc()
-			total.Add(time.Now().Sub(start).Milliseconds())
 			if err != nil {
 				// handle error
 				s.ConnNum.Dec()
