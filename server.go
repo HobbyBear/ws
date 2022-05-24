@@ -158,6 +158,7 @@ func (s *Server) handleConn(conn *Conn) {
 	poller := s.PollList[s.Seq%7]
 	s.Seq++
 	poller.Start(desc, func(event netpoll.Event) {
+
 		callOnConnStateChange(conn, StateActive, "")
 		p.Submit(func() {
 			if event&netpoll.EventRead == 0 {
