@@ -53,7 +53,7 @@ func main() {
 			//		}
 			//	})
 			//}
-			//p.Submit(func() {
+			//go func() {
 			//	for {
 			//		mt, data, err := c.ReadMessage()
 			//		if err != nil {
@@ -64,7 +64,7 @@ func main() {
 			//		}
 			//		fmt.Println(string(data))
 			//	}
-			//})
+			//}()
 			//p.Submit(func() {
 			//	for {
 			//		err := c.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second*2))

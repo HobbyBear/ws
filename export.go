@@ -32,7 +32,7 @@ func SendMsg(data []byte, uid, groupId, topic string) {
 		if len(topic) != 0 && conn.topic != topic {
 			continue
 		}
-		p.Submit(func() {
+		analyzeProtocolPool.Submit(func() {
 			c.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Content: data})
 		})
 	}

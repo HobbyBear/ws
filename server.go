@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"bufio"
 	"easygo/netpoll"
 	"encoding/binary"
 	"fmt"
@@ -17,8 +18,8 @@ import (
 )
 
 var (
-	// 换成自定义的是否会更快，因为这个库的线程池有些功能用不到
-	p, _ = ants.NewPool(1000)
+	analyzeProtocolPool, _ = ants.NewPool(1000)
+	handlePool, _          = ants.NewPool(1000)
 )
 
 type ConnState int
@@ -94,7 +95,7 @@ func (s *Server) startListen() {
 			// handle error
 			log.Fatal(err)
 		}
-		conn2 := &Conn{
+		conn := &Conn{
 			Cid:             uuid.New(),
 			Uid:             "",
 			mux:             sync.Mutex{},
@@ -107,13 +108,16 @@ func (s *Server) startListen() {
 			element:         nil,
 			tickElement:     nil,
 			topic:           "",
+			reader:          bufio.NewReader(rawConn),
+			writer:          bufio.NewWriter(rawConn),
+			protocolLock:    sync.Mutex{},
 		}
 
-		connMgr.Add(conn2)
-		callOnConnStateChange(conn2, StateNew, "")
+		connMgr.Add(conn)
+		callOnConnStateChange(conn, StateNew, "")
 		s.ConnNum.Add(1)
 
-		s.handleConn(conn2)
+		s.handleConn(conn)
 
 	}
 }
@@ -139,7 +143,7 @@ func (s *Server) ShutDown() {
 	// 发送关闭帧
 	allConn := connMgr.GetAllConn()
 	for _, conn := range allConn {
-		p.Submit(func() {
+		analyzeProtocolPool.Submit(func() {
 			conn.WriteMsg(&RawMsg{WsMsgType: websocket.CloseMessage, DeadLine: time.Now().Add(time.Second)})
 		})
 	}
@@ -154,17 +158,19 @@ func (s *Server) ShutDown() {
 
 func (s *Server) handleConn(conn *Conn) {
 	rawConn := conn.rawConn
-	desc := netpoll.Must(netpoll.HandleRead(rawConn))
+	desc := netpoll.Must(netpoll.Handle(rawConn, netpoll.EventRead))
 	poller := s.PollList[s.Seq%7]
 	s.Seq++
 	poller.Start(desc, func(event netpoll.Event) {
-
 		callOnConnStateChange(conn, StateActive, "")
-		p.Submit(func() {
+		analyzeProtocolPool.Submit(func() {
+			conn.protocolLock.Lock()
+			defer conn.protocolLock.Unlock()
+
 			if event&netpoll.EventRead == 0 {
 				return
 			}
-			header, err := ReadHeader(rawConn)
+			header, err := ReadHeader(conn.reader)
 			if err != nil {
 				// handle error
 				s.ConnNum.Dec()
@@ -173,7 +179,7 @@ func (s *Server) handleConn(conn *Conn) {
 				return
 			}
 
-			payload, err := io.ReadAll(io.LimitReader(rawConn, header.Length))
+			payload, err := io.ReadAll(io.LimitReader(conn.reader, header.Length))
 			if err != nil {
 				// handle error
 				s.ConnNum.Dec()
@@ -190,15 +196,9 @@ func (s *Server) handleConn(conn *Conn) {
 			if header.Masked {
 				ws.Cipher(payload, header.Mask, 0)
 			}
-			dataHandler(conn, payload, header.OpCode)
-
-			//err = poller.Resume(desc)
-			//if err != nil {
-			//	s.ConnNum.Dec()
-			//	rawConn.Close()
-			//	poller.Stop(desc)
-			//	return
-			//}
+			handlePool.Submit(func() {
+				dataHandler(conn, payload, header.OpCode)
+			})
 		})
 	})
 }
@@ -208,7 +208,7 @@ const (
 )
 
 // ReadHeader reads a frame header from r.
-func ReadHeader(r io.Reader) (h ws.Header, err error) {
+func ReadHeader(r *bufio.Reader) (h ws.Header, err error) {
 
 	// Make slice of bytes with capacity 12 that could hold any header.
 	//
