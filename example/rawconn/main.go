@@ -43,6 +43,7 @@ func main() {
 				if header.Masked {
 					ws.Cipher(payload, header.Mask, 0)
 				}
+
 				// Reset the Masked flag, server frames must not be masked as
 				// RFC6455 says.
 				header.Masked = false

@@ -2,6 +2,7 @@ package ws
 
 import (
 	"container/list"
+	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	jsoniter "github.com/json-iterator/go"
 	"sync"
@@ -12,7 +13,7 @@ type RouterHandlerReq struct {
 	Conn    *Conn
 	MsgId   string
 	Content []byte
-	WsMsgId int
+	WsMsgId ws.OpCode
 }
 
 type RouterHandler func(req *RouterHandlerReq)
@@ -46,7 +47,7 @@ var (
 		routerMap: map[string]RouterHandler{},
 	}
 
-	dataHandler = func(conn *Conn, data []byte, wsMsgType int) {
+	dataHandler = func(conn *Conn, data []byte, wsMsgType ws.OpCode) {
 		var (
 			msg  = &DataMsg{}
 			json = jsoniter.ConfigCompatibleWithStandardLibrary

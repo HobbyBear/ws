@@ -1,17 +1,17 @@
 package ws
 
 import (
-	"context"
 	"easygo/netpoll"
+	"encoding/binary"
 	"fmt"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	"github.com/panjf2000/ants"
+	"github.com/pborman/uuid"
 	"go.uber.org/atomic"
 	"io"
 	"log"
 	"net"
-	"net/http"
 	"sync"
 	"time"
 )
@@ -50,8 +50,6 @@ type Request struct {
 }
 
 type Server struct {
-	Serv      *http.Server
-	Upgrader  *websocket.Upgrader
 	Logger    Log
 	wg        sync.WaitGroup
 	ConnNum   atomic.Int32
@@ -61,12 +59,6 @@ type Server struct {
 }
 
 type Option func(s *Server)
-
-func SetUpgrader(upgrader *websocket.Upgrader) Option {
-	return func(s *Server) {
-		s.Upgrader = upgrader
-	}
-}
 
 func SetLogger(logger Log) Option {
 	return func(s *Server) {
@@ -86,81 +78,63 @@ func SetTickExpire(expireSec int) Option {
 	}
 }
 
+func (s *Server) startListen() {
+	s.Listener, _ = net.Listen("tcp", "localhost:8080")
+	for {
+		rawConn, err := s.Listener.Accept()
+		if err != nil {
+			log.Printf("Listener.Accept err=%s \n", err)
+			return
+		}
+		// todo 超时控制，关闭掉慢客户端
+
+		_, err = ws.Upgrade(rawConn)
+		if err != nil {
+			// handle error
+			log.Fatal(err)
+		}
+		conn2 := &Conn{
+			Cid:             uuid.New(),
+			Uid:             "",
+			mux:             sync.Mutex{},
+			rawConn:         rawConn,
+			stopSig:         atomic.Int32{},
+			stop:            make(chan int, 1),
+			server:          s,
+			GroupId:         "",
+			lastReceiveTime: time.Now(),
+			element:         nil,
+			tickElement:     nil,
+			topic:           "",
+		}
+
+		connMgr.Add(conn2)
+		callOnConnStateChange(conn2, StateNew, "")
+		s.ConnNum.Add(1)
+
+		s.handleConn(conn2)
+
+	}
+}
+
 func (s *Server) Start() {
-	//go s.Serv.ListenAndServe()
-	//go func() {
-	//	timer := time.NewTimer(3 * time.Second)
-	//	for {
-	//		select {
-	//		case <-timer.C:
-	//			fmt.Println("连接数", s.ConnNum.Load())
-	//			timer.Reset(3 * time.Second)
-	//		}
-	//	}
-	//}()
 	go func() {
-		s.Listener, _ = net.Listen("tcp", "localhost:8080")
+		timer := time.NewTimer(3 * time.Second)
 		for {
-			conn, err := s.Listener.Accept()
-			if err != nil {
-				log.Printf("Listener.Accept err=%s \n", err)
-				return
+			select {
+			case <-timer.C:
+				fmt.Println("连接数", s.ConnNum.Load())
+				timer.Reset(3 * time.Second)
 			}
-			_, err = ws.Upgrade(conn)
-			if err != nil {
-				// handle error
-				log.Fatal(err)
-			}
-			desc := netpoll.Must(netpoll.HandleRead(conn))
-			s.Poll.Start(desc, func(event netpoll.Event) {
-				fmt.Println(event.String())
-				if event&netpoll.EventRead == 0 {
-					return
-				}
-				header, err := ws.ReadHeader(conn)
-				if err != nil {
-					// handle error
-					log.Fatal(err)
-				}
-
-				payload := make([]byte, header.Length)
-				_, err = io.ReadFull(conn, payload)
-				if err != nil {
-					// handle error
-					log.Fatal(err)
-				}
-				if header.Masked {
-					ws.Cipher(payload, header.Mask, 0)
-				}
-				fmt.Println(string(payload))
-				// Reset the Masked flag, server frames must not be masked as
-				// RFC6455 says.
-				header.Masked = false
-
-				if err := ws.WriteHeader(conn, header); err != nil {
-					// handle error
-					log.Fatal(err)
-				}
-				if _, err := conn.Write(payload); err != nil {
-					// handle error
-					log.Fatal(err)
-				}
-
-				if header.OpCode == ws.OpClose {
-					return
-				}
-				err = s.Poll.Resume(desc)
-				if err != nil {
-					log.Fatal(err)
-				}
-			})
 		}
 	}()
+	go s.startListen()
 }
 
 func (s *Server) ShutDown() {
 	// 关闭listener
-	s.Serv.Shutdown(context.TODO())
+	// todo poll 关闭
+	s.Listener.Close()
 	// 发送关闭帧
 	allConn := connMgr.GetAllConn()
 	for _, conn := range allConn {
@@ -178,22 +152,127 @@ func (s *Server) ShutDown() {
 }
 
 func (s *Server) handleConn(conn *Conn) {
-	callOnConnStateChange(conn, StateActive, "")
-	go func() {
-		for {
-			mt, message, err := conn.wsConn.ReadMessage()
-			if err != nil {
-				conn.Close("读取消息失败" + err.Error())
+	rawConn := conn.rawConn
+	desc := netpoll.Must(netpoll.HandleReadOnce(rawConn))
+	s.Poll.Start(desc, func(event netpoll.Event) {
+		callOnConnStateChange(conn, StateActive, "")
+		p.Submit(func() {
+			if event&netpoll.EventRead == 0 {
 				return
 			}
-			err = p.Submit(func() {
-				s.wg.Add(1)
-				defer s.wg.Done()
-				dataHandler(conn, message, mt)
-			})
+			header, err := ReadHeader(rawConn)
 			if err != nil {
-				log.Fatal(err)
+				// handle error
+				s.ConnNum.Dec()
+				rawConn.Close()
+				s.Poll.Stop(desc)
+				return
 			}
+
+			payload, err := io.ReadAll(io.LimitReader(rawConn, header.Length))
+			if err != nil {
+				// handle error
+				s.ConnNum.Dec()
+				rawConn.Close()
+				s.Poll.Stop(desc)
+				return
+			}
+			if header.OpCode == ws.OpClose {
+				s.ConnNum.Dec()
+				rawConn.Close()
+				s.Poll.Stop(desc)
+				return
+			}
+			if header.Masked {
+				ws.Cipher(payload, header.Mask, 0)
+			}
+			dataHandler(conn, payload, header.OpCode)
+
+			err = s.Poll.Resume(desc)
+			if err != nil {
+				s.ConnNum.Dec()
+				rawConn.Close()
+				s.Poll.Stop(desc)
+				return
+			}
+		})
+	})
+}
+
+const (
+	bit0 = 0x80
+)
+
+// ReadHeader reads a frame header from r.
+func ReadHeader(r io.Reader) (h ws.Header, err error) {
+
+	// Make slice of bytes with capacity 12 that could hold any header.
+	//
+	// The maximum header size is 14, but due to the 2 hop reads,
+	// after first hop that reads first 2 constant bytes, we could reuse 2 bytes.
+	// So 14 - 2 = 12.
+
+	// Prepare to hold first 2 bytes to choose size of next read.
+	bts, err := io.ReadAll(io.LimitReader(r, 2))
+	if err != nil || len(bts) == 0 {
+		return
+	}
+
+	h.Fin = bts[0]&bit0 != 0
+	h.Rsv = (bts[0] & 0x70) >> 4
+	h.OpCode = ws.OpCode(bts[0] & 0x0f)
+
+	var extra int
+
+	if bts[1]&bit0 != 0 {
+		h.Masked = true
+		extra += 4
+	}
+
+	length := bts[1] & 0x7f
+	switch {
+	case length < 126:
+		h.Length = int64(length)
+
+	case length == 126:
+		extra += 2
+
+	case length == 127:
+		extra += 8
+
+	default:
+		err = ws.ErrHeaderLengthUnexpected
+		return
+	}
+
+	if extra == 0 {
+		return
+	}
+
+	// Increase len of bts to extra bytes need to read.
+	// Overwrite first 2 bytes that was read before.
+	bts, err = io.ReadAll(io.LimitReader(r, int64(extra)))
+	if err != nil {
+		return
+	}
+
+	switch {
+	case length == 126:
+		h.Length = int64(binary.BigEndian.Uint16(bts[:2]))
+		bts = bts[2:]
+
+	case length == 127:
+		if bts[0]&0x80 != 0 {
+			err = ws.ErrHeaderLengthMSB
+			return
 		}
-	}()
+		h.Length = int64(binary.BigEndian.Uint64(bts[:8]))
+		bts = bts[8:]
+	}
+
+	if h.Masked {
+		copy(h.Mask[:], bts)
+	}
+
+	return
 }

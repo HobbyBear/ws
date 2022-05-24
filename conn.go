@@ -2,9 +2,11 @@ package ws
 
 import (
 	"container/list"
-	"github.com/gorilla/websocket"
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
+	"net"
 	"sync"
 	"time"
 )
@@ -13,7 +15,7 @@ type Conn struct {
 	Cid             string
 	Uid             string
 	mux             sync.Mutex
-	wsConn          *websocket.Conn
+	rawConn         net.Conn
 	stopSig         atomic.Int32
 	stop            chan int
 	server          *Server
@@ -25,7 +27,7 @@ type Conn struct {
 }
 
 type RawMsg struct {
-	WsMsgType int       `json:"-"`
+	WsMsgType ws.OpCode `json:"-"`
 	MsgType   string    `json:"msg_id,omitempty"`
 	Content   []byte    `json:"content,omitempty"`
 	DeadLine  time.Time `json:"-"`
@@ -38,10 +40,10 @@ func (c *Conn) WriteMsg(data *RawMsg) error {
 		return nil
 	}
 	if isControl(data.WsMsgType) {
-		return c.wsConn.WriteControl(data.WsMsgType, data.Content, data.DeadLine)
+		return wsutil.WriteServerMessage(c.rawConn, data.WsMsgType, data.Content)
 	}
 	if isData(data.WsMsgType) {
-		return c.wsConn.WriteMessage(data.WsMsgType, data.Content)
+		return wsutil.WriteServerMessage(c.rawConn, data.WsMsgType, data.Content)
 	}
 	return errors.New("websocket: bad write message type")
 }
@@ -57,13 +59,13 @@ func (c *Conn) Close(reason string) {
 	defaultConnMgr.Del(c)
 	callOnConnStateChange(c, StateClosed, reason)
 	c.stop <- 1
-	c.wsConn.Close()
+	c.rawConn.Close()
 }
 
-func isControl(frameType int) bool {
-	return frameType == websocket.CloseMessage || frameType == websocket.PingMessage || frameType == websocket.PongMessage
+func isControl(frameType ws.OpCode) bool {
+	return frameType == ws.OpClose || frameType == ws.OpPing || frameType == ws.OpPong
 }
 
-func isData(frameType int) bool {
-	return frameType == websocket.TextMessage || frameType == websocket.BinaryMessage
+func isData(frameType ws.OpCode) bool {
+	return frameType == ws.OpText || frameType == ws.OpBinary
 }

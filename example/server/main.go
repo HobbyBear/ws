@@ -21,25 +21,11 @@ func main() {
 	flag.Parse()
 	log.SetFlags(0)
 	ch := make(chan int)
-	s := ws.InitWs(*addr, ws.SetUpgrader(&websocket.Upgrader{}))
+	s := ws.InitWs(*addr)
 	ws.GetRouterMgr().RegHandler("1", func(req *ws.RouterHandlerReq) {
 		err := req.Conn.WriteMsg(&ws.RawMsg{WsMsgType: websocket.TextMessage, Content: []byte("haha")})
 		if err != nil {
 			log.Println(err)
-		}
-	})
-	ws.SetSendPongFunc(func(conn *ws.Conn, data string) {
-		err := conn.WriteMsg(&ws.RawMsg{WsMsgType: websocket.PongMessage, Content: nil, DeadLine: time.Now().Add(3 * time.Second)})
-		if err != nil {
-			log.Println(err)
-		}
-	})
-	ws.SetCallOnConnStateChange(func(c *ws.Conn, state ws.ConnState, reason string) {
-		if state == ws.StateClosed {
-			ws.Infof("连接关闭 conn id=%s", c.Cid, reason)
-		}
-		if state == ws.StateNew {
-
 		}
 	})
 	s.Start()
