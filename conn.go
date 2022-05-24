@@ -10,6 +10,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"ws/internal/trylock"
 )
 
 type Conn struct {
@@ -27,7 +28,7 @@ type Conn struct {
 	topic           string
 	reader          *bufio.Reader
 	writer          *bufio.Writer
-	protocolLock    sync.Mutex // 解析协议时要用到的锁，防止epoll 多次epoll多次通知
+	protocolLock    *trylock.Mutex // 解析协议时要用到的锁，防止epoll 多次epoll多次通知
 }
 
 type RawMsg struct {
