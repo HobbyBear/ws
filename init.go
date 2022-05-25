@@ -28,7 +28,7 @@ func InitWs(addr string, options ...Option) *Server {
 	for i := 0; i < runtime.NumCPU(); i++ {
 		s.PollList[i], _ = netpoll.New(&netpoll.Config{
 			OnWaitError: func(err error) {
-				log.Println(err)
+				log.Println(err, "poll 内部报错")
 			},
 		})
 	}

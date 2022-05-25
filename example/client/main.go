@@ -20,9 +20,9 @@ func main() {
 	flag.Parse()
 	log.SetFlags(0)
 
-	u := url.URL{Scheme: "ws", Host: "192.168.2.9:8080", Path: "/"}
+	u := url.URL{Scheme: "ws", Host: "127.0.0.1:8081", Path: "/"}
 	log.Printf("connecting to %s", u.String())
-	for i := 1; i <= 20000; i++ {
+	for i := 1; i <= 10000; i++ {
 		go func() {
 			var (
 				c   *websocket.Conn

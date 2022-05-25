@@ -7,6 +7,7 @@ import (
 	"github.com/gobwas/ws/wsutil"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -27,8 +28,6 @@ type Conn struct {
 	element         *list.Element
 	tickElement     *list.Element
 	topic           string
-	reader          *bufio.Reader
-	writer          *bufio.Writer
 	protocolLock    *trylock.Mutex // 解析协议时要用到的锁，防止epoll 多次epoll多次通知
 	poll            netpoll.Poller
 	pollDesc        *netpoll.Desc
@@ -48,17 +47,20 @@ func (c *Conn) WriteMsg(data *RawMsg) error {
 		return nil
 	}
 	if isControl(data.WsMsgType) {
-		wsutil.WriteServerMessage(c.writer, data.WsMsgType, data.Content)
-		return c.writer.Flush()
+		w := bufio.NewWriter(c.rawConn)
+		wsutil.WriteServerMessage(w, data.WsMsgType, data.Content)
+		return w.Flush()
 	}
 	if isData(data.WsMsgType) {
-		wsutil.WriteServerMessage(c.writer, data.WsMsgType, data.Content)
-		return c.writer.Flush()
+		w := bufio.NewWriter(c.rawConn)
+		wsutil.WriteServerMessage(w, data.WsMsgType, data.Content)
+		return w.Flush()
 	}
 	return errors.New("websocket: bad write message type")
 }
 
 func (c *Conn) Close(reason string) {
+	log.Println(reason, "连接关闭")
 	if c.stopSig.Load() == 1 {
 		return
 	}

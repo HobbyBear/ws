@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	analyzeProtocolPool, _ = ants.NewPool(1000)
-	handlePool, _          = ants.NewPool(1000)
+	analyzeProtocolPool, _ = ants.NewPool(128)
+	handlePool, _          = ants.NewPool(128)
 )
 
 type ConnState int
@@ -93,7 +93,9 @@ func (s *Server) startListen() {
 		_, err = ws.Upgrade(rawConn)
 		if err != nil {
 			// handle error
-			log.Fatal(err)
+			log.Println("握手失败", err)
+			rawConn.Close()
+			continue
 		}
 		conn := &Conn{
 			Cid:             uuid.New(),
@@ -108,8 +110,6 @@ func (s *Server) startListen() {
 			element:         nil,
 			tickElement:     nil,
 			topic:           "",
-			reader:          bufio.NewReader(rawConn),
-			writer:          bufio.NewWriter(rawConn),
 			protocolLock:    trylock.NewMutex(),
 		}
 
@@ -171,18 +171,14 @@ func (s *Server) handleConn(conn *Conn) {
 	conn.pollDesc = desc
 	poller.Start(desc, func(event netpoll.Event) {
 		callOnConnStateChange(conn, StateActive, "")
-		analyzeProtocolPool.Submit(func() {
-			if !conn.protocolLock.TryLock() {
-				return
-			}
-			defer conn.protocolLock.Unlock()
 
+		analyzeProtocolPool.Submit(func() {
 			if event&netpoll.EventRead == 0 {
 				return
 			}
-			header, payload, err := getProtocolContent(conn.reader)
+			header, payload, err := getProtocolContent(bufio.NewReader(rawConn))
 			if err != nil {
-				conn.Close(err.Error())
+				conn.Close(err.Error() + " 读取请求体")
 				return
 			}
 			s.conTicker.AddTickConn(conn)
@@ -196,6 +192,9 @@ func (s *Server) handleConn(conn *Conn) {
 			}
 			if header.Masked {
 				ws.Cipher(payload, header.Mask, 0)
+			}
+			if len(payload) == 0 {
+				return
 			}
 			handlePool.Submit(func() {
 				dataHandler(conn, payload, header.OpCode)
