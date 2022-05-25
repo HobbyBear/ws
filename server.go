@@ -89,6 +89,7 @@ func (s *Server) startListen() {
 			log.Printf("Listener.Accept err=%s \n", err)
 			return
 		}
+
 		rawConn.SetReadDeadline(time.Now().Add(s.UpgradeDeadline))
 		_, err = ws.Upgrade(rawConn)
 		if err != nil {
@@ -169,6 +170,10 @@ func (s *Server) handleConn(conn *Conn) {
 	err := poller.Start(desc, func(event netpoll.Event) {
 		callOnConnStateChange(conn, StateActive, "")
 		if event&netpoll.EventRead == 0 {
+			return
+		}
+		if event&netpoll.EventHup != 0 || event&netpoll.EventReadHup != 0 {
+			conn.Close("正常关闭")
 			return
 		}
 		header, payload, err := getProtocolContent(rawConn, s.ReadHeaderDeadline, s.ReadPayloadDeadline)

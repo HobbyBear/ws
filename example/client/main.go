@@ -75,25 +75,25 @@ func main() {
 			//		time.Sleep(time.Second * 3)
 			//	}
 			//})
-			if *addr == 1 {
-				go func() {
-					for {
+			//if *addr == 1 {
+			go func() {
+				for {
 
-						data := ws.DataMsg{
-							MsgType: "1",
-							Content: "haha",
-						}
-						err := c.WriteMessage(websocket.TextMessage, data.MarshalJSON())
-						if err != nil {
-							log.Println("write:", err)
-							return
-						}
-						time.Sleep(5 * time.Second)
+					data := ws.DataMsg{
+						MsgType: "1",
+						Content: "haha",
 					}
-				}()
-			}
-			time.Sleep(10 * time.Hour)
+					err := c.WriteMessage(websocket.TextMessage, data.MarshalJSON())
+					if err != nil {
+						log.Println("write:", err)
+						return
+					}
+					time.Sleep(5 * time.Second)
+				}
+			}()
 		}()
+		//time.Sleep(10 * time.Hour)
+		//}()
 
 	}
 	time.Sleep(10 * time.Hour)

@@ -59,10 +59,10 @@ func (c *Conn) WriteMsg(data *RawMsg) error {
 }
 
 func (c *Conn) Close(reason string) {
-	log.Println(reason, "连接关闭")
 	if c.stopSig.Load() == 1 {
 		return
 	}
+	log.Println(reason, "连接关闭")
 	c.mux.Lock()
 	defer c.mux.Unlock()
 	c.stopSig.Store(1)

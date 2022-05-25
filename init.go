@@ -25,7 +25,7 @@ func InitWs(addr string, options ...Option) *Server {
 		PollList:            nil,
 		Seq:                 0,
 		Addr:                addr,
-		UpgradeDeadline:     2 * time.Second,
+		UpgradeDeadline:     3 * time.Second,
 		ReadHeaderDeadline:  1 * time.Second,
 		ReadPayloadDeadline: 2 * time.Second,
 	}
