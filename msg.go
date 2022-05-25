@@ -6,7 +6,7 @@ import (
 
 type DataMsg struct {
 	MsgType string `json:"msg_id,omitempty"`
-	Content []byte `json:"content,omitempty"`
+	Content string `json:"content,omitempty"`
 	Uid     string `json:"uid,omitempty"`
 	GroupId string `json:"groupId,omitempty"`
 	Topic   string `json:"topic,omitempty"`

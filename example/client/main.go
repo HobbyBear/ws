@@ -12,6 +12,8 @@ import (
 	"ws"
 )
 
+var addr = flag.Int64("addr", 0, "http service address")
+
 func main() {
 
 	flag.Parse()
@@ -19,7 +21,7 @@ func main() {
 
 	u := url.URL{Scheme: "ws", Host: "127.0.0.1:8080", Path: "/"}
 	log.Printf("connecting to %s", u.String())
-	for i := 1; i <= 1; i++ {
+	for i := 1; i <= 10000; i++ {
 		go func() {
 			var (
 				c   *websocket.Conn
@@ -50,18 +52,18 @@ func main() {
 			//		}
 			//	})
 			//}
-			go func() {
-				for {
-					mt, data, err := c.ReadMessage()
-					if err != nil {
-						if err.Error() != "websocket: close 1006 (abnormal closure): unexpected EOF" {
-							log.Println(err, string(data), mt)
-						}
-						time.Sleep(2 * time.Second)
-					}
-					fmt.Println(string(data))
-				}
-			}()
+			//go func() {
+			//	for {
+			//		mt, data, err := c.ReadMessage()
+			//		if err != nil {
+			//			if err.Error() != "websocket: close 1006 (abnormal closure): unexpected EOF" {
+			//				log.Println(err, string(data), mt)
+			//			}
+			//			time.Sleep(2 * time.Second)
+			//		}
+			//		fmt.Println(string(data))
+			//	}
+			//}()
 			//p.Submit(func() {
 			//	for {
 			//		err := c.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second*2))
@@ -73,25 +75,28 @@ func main() {
 			//		time.Sleep(time.Second * 3)
 			//	}
 			//})
-			go func() {
-				for {
+			if *addr == 1 {
+				go func() {
+					for {
 
-					data := ws.DataMsg{
-						MsgType: "1",
-						Content: []byte("haha"),
+						data := ws.DataMsg{
+							MsgType: "1",
+							Content: "haha",
+						}
+						err := c.WriteMessage(websocket.TextMessage, data.MarshalJSON())
+						if err != nil {
+							log.Println("write:", err)
+							return
+						}
+						time.Sleep(5 * time.Second)
 					}
-					err := c.WriteMessage(websocket.TextMessage, data.MarshalJSON())
-					if err != nil {
-						log.Println("write:", err)
-						return
-					}
-					time.Sleep(3 * time.Second)
-				}
-			}()
+				}()
+			}
+			time.Sleep(10 * time.Hour)
 		}()
 
 	}
-
-	fmt.Println("连接client finished")
 	time.Sleep(10 * time.Hour)
+	fmt.Println("连接client finished")
+
 }

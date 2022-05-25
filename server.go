@@ -111,11 +111,6 @@ func (s *Server) startListen() {
 			tickElement:     nil,
 			topic:           "",
 		}
-
-		connMgr.Add(conn)
-		callOnConnStateChange(conn, StateNew, "")
-		s.ConnNum.Add(1)
-
 		s.handleConn(conn)
 
 	}
@@ -162,6 +157,9 @@ func (s *Server) ShutDown() {
 }
 
 func (s *Server) handleConn(conn *Conn) {
+	connMgr.Add(conn)
+	callOnConnStateChange(conn, StateNew, "")
+	s.ConnNum.Add(1)
 	rawConn := conn.rawConn
 	desc := netpoll.Must(netpoll.Handle(rawConn, netpoll.EventRead))
 	poller := s.PollList[s.Seq%7]

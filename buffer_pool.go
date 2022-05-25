@@ -44,7 +44,7 @@ func newLimitReader(rr io.Reader, n int64) *io.LimitedReader {
 }
 
 func newBuffWriter(ww io.Writer) *bufio.Writer {
-	w := bufferReaderPool.Get().(*bufio.Writer)
+	w := bufferWriterPool.Get().(*bufio.Writer)
 	w.Reset(ww)
 	return w
 }

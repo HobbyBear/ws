@@ -21,7 +21,7 @@ func main() {
 	ch := make(chan int)
 	s := ws.InitWs(*addr)
 	ws.GetRouterMgr().RegHandler("1", func(req *ws.RouterHandlerReq) {
-		err := req.Conn.WriteMsg(&ws.RawMsg{WsMsgType: websocket.TextMessage, Content: req.Content})
+		err := req.Conn.WriteMsg(&ws.RawMsg{WsMsgType: websocket.TextMessage, Content: []byte(req.Content)})
 		if err != nil {
 			log.Println(err)
 		}

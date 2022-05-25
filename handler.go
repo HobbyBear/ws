@@ -2,6 +2,7 @@ package ws
 
 import (
 	"container/list"
+	"encoding/json"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	jsoniter "github.com/json-iterator/go"
@@ -12,7 +13,7 @@ import (
 type RouterHandlerReq struct {
 	Conn    *Conn
 	MsgId   string
-	Content []byte
+	Content string
 	WsMsgId ws.OpCode
 }
 
@@ -49,13 +50,19 @@ var (
 
 	dataHandler = func(conn *Conn, data []byte, wsMsgType ws.OpCode) {
 		var (
-			msg  = &DataMsg{}
-			json = jsoniter.ConfigCompatibleWithStandardLibrary
-			err  error
+			msg   = &DataMsg{}
+			json2 = jsoniter.ConfigCompatibleWithStandardLibrary
+			err   error
 		)
-		err = json.Unmarshal(data, msg)
+		err = json2.Unmarshal(data, msg)
 		if err != nil {
 			Errorf("data msg is invalid err=%s data=%s", err, string(data))
+			err = json.Unmarshal(data, msg)
+			if err != nil {
+				Errorf("data msg is invalid2 err=%s data=%s", err, string(data))
+			} else {
+				Errorf("data msg is invalid3 err=%s data=%s", err, string(data))
+			}
 			return
 		}
 
