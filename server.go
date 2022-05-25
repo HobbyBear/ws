@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"bufio"
 	"fmt"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
@@ -13,7 +12,6 @@ import (
 	"sync"
 	"time"
 	"ws/internal/netpoll"
-	"ws/internal/trylock"
 )
 
 var (
@@ -50,14 +48,17 @@ type Request struct {
 }
 
 type Server struct {
-	Logger    Log
-	wg        sync.WaitGroup
-	ConnNum   atomic.Int32
-	conTicker *ConnTick
-	Listener  net.Listener
-	PollList  []netpoll.Poller
-	Seq       int
-	Addr      string
+	Logger              Log
+	wg                  sync.WaitGroup
+	ConnNum             atomic.Int32
+	conTicker           *ConnTick
+	Listener            net.Listener
+	PollList            []netpoll.Poller
+	Seq                 int
+	Addr                string
+	UpgradeDeadline     time.Duration // 升级ws协议的超时时间
+	ReadHeaderDeadline  time.Duration // 读取header的超时时间
+	ReadPayloadDeadline time.Duration // 读取payload的超时时间
 }
 
 type Option func(s *Server)
@@ -88,12 +89,11 @@ func (s *Server) startListen() {
 			log.Printf("Listener.Accept err=%s \n", err)
 			return
 		}
-		// todo 超时控制，关闭掉慢客户端
-
+		rawConn.SetReadDeadline(time.Now().Add(s.UpgradeDeadline))
 		_, err = ws.Upgrade(rawConn)
 		if err != nil {
 			// handle error
-			log.Println("握手失败", err)
+			Errorf("握手失败 err=%s", err)
 			rawConn.Close()
 			continue
 		}
@@ -110,7 +110,6 @@ func (s *Server) startListen() {
 			element:         nil,
 			tickElement:     nil,
 			topic:           "",
-			protocolLock:    trylock.NewMutex(),
 		}
 
 		connMgr.Add(conn)
@@ -169,18 +168,17 @@ func (s *Server) handleConn(conn *Conn) {
 	s.Seq++
 	conn.poll = poller
 	conn.pollDesc = desc
-	poller.Start(desc, func(event netpoll.Event) {
+	err := poller.Start(desc, func(event netpoll.Event) {
 		callOnConnStateChange(conn, StateActive, "")
-
-		analyzeProtocolPool.Submit(func() {
-			if event&netpoll.EventRead == 0 {
-				return
-			}
-			header, payload, err := getProtocolContent(bufio.NewReader(rawConn))
-			if err != nil {
-				conn.Close(err.Error() + " 读取请求体")
-				return
-			}
+		if event&netpoll.EventRead == 0 {
+			return
+		}
+		header, payload, err := getProtocolContent(rawConn, s.ReadHeaderDeadline, s.ReadPayloadDeadline)
+		if err != nil {
+			conn.Close(err.Error() + " 读取请求体")
+			return
+		}
+		handlePool.Submit(func() {
 			s.conTicker.AddTickConn(conn)
 			if header.OpCode == ws.OpClose {
 				conn.Close("对端主动关闭")
@@ -196,9 +194,10 @@ func (s *Server) handleConn(conn *Conn) {
 			if len(payload) == 0 {
 				return
 			}
-			handlePool.Submit(func() {
-				dataHandler(conn, payload, header.OpCode)
-			})
+			dataHandler(conn, payload, header.OpCode)
 		})
 	})
+	if err != nil {
+		Errorf("poll start fail err=%s", err)
+	}
 }

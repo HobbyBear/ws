@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/gorilla/websocket"
-	"github.com/panjf2000/ants"
 	"log"
 	"math/rand"
 	"net/url"
@@ -13,16 +12,14 @@ import (
 	"ws"
 )
 
-var p, _ = ants.NewPool(2000)
-
 func main() {
 
 	flag.Parse()
 	log.SetFlags(0)
 
-	u := url.URL{Scheme: "ws", Host: "127.0.0.1:8081", Path: "/"}
+	u := url.URL{Scheme: "ws", Host: "127.0.0.1:8080", Path: "/"}
 	log.Printf("connecting to %s", u.String())
-	for i := 1; i <= 10000; i++ {
+	for i := 1; i <= 1; i++ {
 		go func() {
 			var (
 				c   *websocket.Conn
@@ -53,18 +50,18 @@ func main() {
 			//		}
 			//	})
 			//}
-			//go func() {
-			//	for {
-			//		mt, data, err := c.ReadMessage()
-			//		if err != nil {
-			//			if err.Error() != "websocket: close 1006 (abnormal closure): unexpected EOF" {
-			//				log.Println(err, string(data), mt)
-			//			}
-			//			time.Sleep(2 * time.Second)
-			//		}
-			//		fmt.Println(string(data))
-			//	}
-			//}()
+			go func() {
+				for {
+					mt, data, err := c.ReadMessage()
+					if err != nil {
+						if err.Error() != "websocket: close 1006 (abnormal closure): unexpected EOF" {
+							log.Println(err, string(data), mt)
+						}
+						time.Sleep(2 * time.Second)
+					}
+					fmt.Println(string(data))
+				}
+			}()
 			//p.Submit(func() {
 			//	for {
 			//		err := c.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second*2))
@@ -88,7 +85,7 @@ func main() {
 						log.Println("write:", err)
 						return
 					}
-					time.Sleep(2 * time.Second)
+					time.Sleep(3 * time.Second)
 				}
 			}()
 		}()

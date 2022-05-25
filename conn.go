@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"bufio"
 	"container/list"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
@@ -12,7 +11,6 @@ import (
 	"sync"
 	"time"
 	"ws/internal/netpoll"
-	"ws/internal/trylock"
 )
 
 type Conn struct {
@@ -28,7 +26,6 @@ type Conn struct {
 	element         *list.Element
 	tickElement     *list.Element
 	topic           string
-	protocolLock    *trylock.Mutex // 解析协议时要用到的锁，防止epoll 多次epoll多次通知
 	poll            netpoll.Poller
 	pollDesc        *netpoll.Desc
 }
@@ -47,14 +44,16 @@ func (c *Conn) WriteMsg(data *RawMsg) error {
 		return nil
 	}
 	if isControl(data.WsMsgType) {
-		w := bufio.NewWriter(c.rawConn)
+		w := newBuffWriter(c.rawConn)
 		wsutil.WriteServerMessage(w, data.WsMsgType, data.Content)
-		return w.Flush()
+		returnBuffWriterPoll(w)
+		return nil
 	}
 	if isData(data.WsMsgType) {
-		w := bufio.NewWriter(c.rawConn)
+		w := newBuffWriter(c.rawConn)
 		wsutil.WriteServerMessage(w, data.WsMsgType, data.Content)
-		return w.Flush()
+		returnBuffWriterPoll(w)
+		return nil
 	}
 	return errors.New("websocket: bad write message type")
 }
