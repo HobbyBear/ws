@@ -3,7 +3,6 @@ package ws
 import (
 	"fmt"
 	"github.com/gobwas/ws"
-	"github.com/gorilla/websocket"
 	"github.com/panjf2000/ants"
 	"github.com/pborman/uuid"
 	"go.uber.org/atomic"
@@ -142,7 +141,7 @@ func (s *Server) ShutDown() {
 	allConn := connMgr.GetAllConn()
 	for _, conn := range allConn {
 		analyzeProtocolPool.Submit(func() {
-			conn.WriteMsg(&RawMsg{WsMsgType: websocket.CloseMessage, DeadLine: time.Now().Add(time.Second)})
+			conn.WriteMsg(&RawMsg{WsMsgType: ws.OpClose, DeadLine: time.Now().Add(time.Second)})
 		})
 	}
 	// 对已经收到的帧进行处理

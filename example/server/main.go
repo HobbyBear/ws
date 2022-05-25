@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
+	ws2 "github.com/gobwas/ws"
 	"github.com/google/gops/agent"
-	"github.com/gorilla/websocket"
 	"log"
 	_ "net/http/pprof"
 	"ws"
@@ -21,7 +21,7 @@ func main() {
 	ch := make(chan int)
 	s := ws.InitWs(*addr)
 	ws.GetRouterMgr().RegHandler("1", func(req *ws.RouterHandlerReq) {
-		err := req.Conn.WriteMsg(&ws.RawMsg{WsMsgType: websocket.TextMessage, Content: []byte(req.Content)})
+		err := req.Conn.WriteMsg(&ws.RawMsg{WsMsgType: ws2.OpText, Content: []byte(req.Content)})
 		if err != nil {
 			log.Println(err)
 		}

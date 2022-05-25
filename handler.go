@@ -4,7 +4,6 @@ import (
 	"container/list"
 	"encoding/json"
 	"github.com/gobwas/ws"
-	"github.com/gorilla/websocket"
 	jsoniter "github.com/json-iterator/go"
 	"sync"
 	"time"
@@ -38,10 +37,10 @@ func (d *defaultRouterMgr) RegHandler(msgId string, handler RouterHandler) {
 
 var (
 	sendPong = func(conn *Conn, data string) {
-		conn.WriteMsg(&RawMsg{WsMsgType: websocket.PongMessage, Content: nil, DeadLine: time.Now().Add(time.Second)})
+		conn.WriteMsg(&RawMsg{WsMsgType: ws.OpPong, Content: nil, DeadLine: time.Now().Add(time.Second)})
 	}
 	sendPing = func(conn *Conn) {
-		conn.WriteMsg(&RawMsg{WsMsgType: websocket.PingMessage, Content: nil, DeadLine: time.Now().Add(time.Second)})
+		conn.WriteMsg(&RawMsg{WsMsgType: ws.OpPong, Content: nil, DeadLine: time.Now().Add(time.Second)})
 	}
 
 	routerMgr RouterMgr = &defaultRouterMgr{

@@ -1,10 +1,12 @@
 package ws
 
-import "github.com/gorilla/websocket"
+import (
+	"github.com/gobwas/ws"
+)
 
 func SendMsgToAll(data []byte) {
 	for _, conn := range defaultConnMgr.GetAllConn() {
-		conn.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Content: data})
+		conn.WriteMsg(&RawMsg{WsMsgType: ws.OpText, Content: data})
 	}
 }
 
@@ -32,6 +34,6 @@ func SendMsg(data []byte, uid, groupId, topic string) {
 		if len(topic) != 0 && conn.topic != topic {
 			continue
 		}
-		c.WriteMsg(&RawMsg{WsMsgType: websocket.TextMessage, Content: data})
+		c.WriteMsg(&RawMsg{WsMsgType: ws.OpText, Content: data})
 	}
 }

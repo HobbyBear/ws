@@ -37,19 +37,20 @@ type RawMsg struct {
 	DeadLine  time.Time `json:"-"`
 }
 
+// todo 异步写
 func (c *Conn) WriteMsg(data *RawMsg) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 	if c.stopSig.Load() == 1 {
 		return nil
 	}
-	if isControl(data.WsMsgType) {
+	if data.WsMsgType.IsControl() {
 		w := newBuffWriter(c.rawConn)
 		wsutil.WriteServerMessage(w, data.WsMsgType, data.Content)
 		returnBuffWriterPoll(w)
 		return nil
 	}
-	if isData(data.WsMsgType) {
+	if data.WsMsgType.IsData() {
 		w := newBuffWriter(c.rawConn)
 		wsutil.WriteServerMessage(w, data.WsMsgType, data.Content)
 		returnBuffWriterPoll(w)
@@ -72,12 +73,4 @@ func (c *Conn) Close(reason string) {
 	c.stop <- 1
 	c.poll.Stop(c.pollDesc)
 	c.rawConn.Close()
-}
-
-func isControl(frameType ws.OpCode) bool {
-	return frameType == ws.OpClose || frameType == ws.OpPing || frameType == ws.OpPong
-}
-
-func isData(frameType ws.OpCode) bool {
-	return frameType == ws.OpText || frameType == ws.OpBinary
 }

@@ -252,8 +252,7 @@ func KqueueCreate(c *KqueueConfig) (*Kqueue, error) {
 // Close closes kqueue instance.
 // NOTE: not implemented yet.
 func (k *Kqueue) Close() error {
-	unix.Close(k.fd)
-	return nil
+	return unix.Close(k.fd)
 }
 
 // Add adds a event handler for identifier fd with given n events.
