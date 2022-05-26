@@ -89,7 +89,7 @@ func (s *Server) startListen() {
 			return
 		}
 
-		rawConn.SetReadDeadline(time.Now().Add(s.UpgradeDeadline))
+		//rawConn.SetReadDeadline(time.Now().Add(s.UpgradeDeadline))
 		_, err = ws.Upgrade(rawConn)
 		if err != nil {
 			// handle error
@@ -112,7 +112,6 @@ func (s *Server) startListen() {
 			topic:           "",
 		}
 		s.handleConn(conn)
-
 	}
 }
 
@@ -175,29 +174,29 @@ func (s *Server) handleConn(conn *Conn) {
 			conn.Close("正常关闭")
 			return
 		}
-		header, payload, err := getProtocolContent(rawConn, s.ReadHeaderDeadline, s.ReadPayloadDeadline)
+		msgList, err := getProtocolContent(conn, s.ReadHeaderDeadline, s.ReadPayloadDeadline)
+		for _, msg := range msgList {
+			packet := msg
+			handlePool.Submit(func() {
+				s.conTicker.AddTickConn(conn)
+				if packet.header.OpCode == ws.OpClose {
+					conn.Close("对端主动关闭")
+					return
+				}
+				if packet.header.OpCode == ws.OpPing {
+					sendPing(conn)
+					return
+				}
+				if len(packet.data) == 0 {
+					return
+				}
+				dataHandler(conn, packet.data, packet.header.OpCode)
+			})
+		}
 		if err != nil {
-			conn.Close(err.Error() + " 读取请求体")
+			conn.Close("读取请求体" + err.Error())
 			return
 		}
-		handlePool.Submit(func() {
-			s.conTicker.AddTickConn(conn)
-			if header.OpCode == ws.OpClose {
-				conn.Close("对端主动关闭")
-				return
-			}
-			if header.OpCode == ws.OpPing {
-				sendPing(conn)
-				return
-			}
-			if header.Masked {
-				ws.Cipher(payload, header.Mask, 0)
-			}
-			if len(payload) == 0 {
-				return
-			}
-			dataHandler(conn, payload, header.OpCode)
-		})
 	})
 	if err != nil {
 		Errorf("poll start fail err=%s", err)

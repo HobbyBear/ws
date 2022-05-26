@@ -1,33 +1,63 @@
 package ws
 
 import (
-	"bufio"
 	"encoding/binary"
 	"github.com/gobwas/ws"
 	"io"
-	"net"
 	"time"
 )
 
-func getProtocolContent(rawConn net.Conn, headDeadLine time.Duration, bodyDeadLine time.Duration) (ws.Header, []byte, error) {
+type message struct {
+	header ws.Header
+	data   []byte
+}
 
-	r := newBufferReader(rawConn)
-	defer returnBuffReaderPoll(r)
+func getProtocolContent(conn *Conn, headDeadLine time.Duration, bodyDeadLine time.Duration) ([]*message, error) {
 
-	rawConn.SetReadDeadline(time.Now().Add(headDeadLine))
-	header, err := readHeader(r)
-	if err != nil {
-		return header, nil, err
+	var (
+		r       = newBufioReader(conn.rawConn)
+		msgList []*message
+	)
+	defer putBufioReader(r)
+	for {
+		var buf []byte
+	readFrame:
+		conn.rawConn.SetReadDeadline(time.Now().Add(headDeadLine))
+		header, err := readHeader(r)
+		if err != nil {
+			return msgList, err
+		}
+		lr := newLimitReader(r, header.Length)
+		conn.rawConn.SetReadDeadline(time.Now().Add(bodyDeadLine))
+		payload, err := io.ReadAll(lr)
+		returnLimitReaderPoll(lr)
+		if err != nil {
+			return msgList, err
+		}
+		if header.Masked {
+			ws.Cipher(payload, header.Mask, 0)
+		}
+
+		if header.OpCode == ws.OpContinuation && !header.Fin {
+			buf = append(buf, payload...)
+			goto readFrame
+		}
+		if len(buf) != 0 {
+			msgList = append(msgList, &message{
+				header: header,
+				data:   append(buf, payload...),
+			})
+		} else {
+			msgList = append(msgList, &message{
+				header: header,
+				data:   payload,
+			})
+		}
+		if r.Buffered() <= 0 {
+			break
+		}
 	}
-	lr := newLimitReader(r, header.Length)
-	defer returnLimitReaderPoll(lr)
-	rawConn.SetReadDeadline(time.Now().Add(bodyDeadLine))
-	payload, err := io.ReadAll(lr)
-
-	if err != nil {
-		return header, nil, err
-	}
-	return header, payload, nil
+	return msgList, nil
 }
 
 const (
@@ -35,7 +65,7 @@ const (
 )
 
 // readHeader reads a frame header from r.
-func readHeader(r *bufio.Reader) (h ws.Header, err error) {
+func readHeader(r io.Reader) (h ws.Header, err error) {
 
 	// Make slice of bytes with capacity 12 that could hold any header.
 	//
@@ -44,7 +74,6 @@ func readHeader(r *bufio.Reader) (h ws.Header, err error) {
 	// So 14 - 2 = 12.
 
 	// Prepare to hold first 2 bytes to choose size of next read.
-
 	lr := newLimitReader(r, 2)
 	defer limitReaderPool.Put(lr)
 	bts, err := io.ReadAll(lr)
@@ -85,7 +114,8 @@ func readHeader(r *bufio.Reader) (h ws.Header, err error) {
 
 	// Increase len of bts to extra bytes need to read.
 	// Overwrite first 2 bytes that was read before.
-	lr = newLimitReader(r, int64(extra))
+	lr.N = int64(extra)
+	lr.R = r
 	bts, err = io.ReadAll(lr)
 	if err != nil {
 		return

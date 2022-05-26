@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	bufferReaderPool = sync.Pool{New: func() interface{} {
+	bufioReaderPool = sync.Pool{New: func() interface{} {
 		return bufio.NewReader(os.Stdin)
 	}}
 	bufferWriterPool = sync.Pool{New: func() interface{} {
@@ -22,14 +22,20 @@ var (
 	}}
 )
 
-func returnBuffReaderPoll(r *bufio.Reader) {
-	bufferReaderPool.Put(r)
+func newBufioReader(r io.Reader) *bufio.Reader {
+	if v := bufioReaderPool.Get(); v != nil {
+		br := v.(*bufio.Reader)
+		br.Reset(r)
+		return br
+	}
+	// Note: if this reader size is ever changed, update
+	// TestHandlerBodyClose's assumptions.
+	return bufio.NewReader(r)
 }
 
-func newBufferReader(rr io.Reader) *bufio.Reader {
-	r := bufferReaderPool.Get().(*bufio.Reader)
-	r.Reset(rr)
-	return r
+func putBufioReader(br *bufio.Reader) {
+	br.Reset(nil)
+	bufioReaderPool.Put(br)
 }
 
 func returnLimitReaderPoll(r *io.LimitedReader) {

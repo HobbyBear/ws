@@ -41,6 +41,6 @@ func InitWs(addr string, options ...Option) *Server {
 			},
 		})
 	}
-	s.conTicker.Start()
+	//s.conTicker.Start()
 	return s
 }
