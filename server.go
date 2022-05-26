@@ -10,12 +10,13 @@ import (
 	"net"
 	"sync"
 	"time"
-	"ws/internal/netpoll"
+	"ws/netpoll"
 )
 
 var (
 	analyzeProtocolPool, _ = ants.NewPool(128)
 	handlePool, _          = ants.NewPool(128)
+	acceptPool, _          = ants.NewPool(128)
 )
 
 type ConnState int
@@ -58,6 +59,8 @@ type Server struct {
 	UpgradeDeadline     time.Duration // 升级ws协议的超时时间
 	ReadHeaderDeadline  time.Duration // 读取header的超时时间
 	ReadPayloadDeadline time.Duration // 读取payload的超时时间
+	cpuNum              int
+	connMgr             ConnMgr
 }
 
 type Option func(s *Server)
@@ -81,37 +84,40 @@ func SetTickExpire(expireSec int) Option {
 }
 
 func (s *Server) startListen() {
-	s.Listener, _ = net.Listen("tcp", s.Addr)
+	var err error
+	s.Listener, err = net.Listen("tcp", s.Addr)
+	if err != nil {
+		log.Fatal(err)
+	}
 	for {
 		rawConn, err := s.Listener.Accept()
 		if err != nil {
 			log.Printf("Listener.Accept err=%s \n", err)
 			return
 		}
-
-		//rawConn.SetReadDeadline(time.Now().Add(s.UpgradeDeadline))
-		_, err = ws.Upgrade(rawConn)
-		if err != nil {
-			// handle error
-			Errorf("握手失败 err=%s", err)
-			rawConn.Close()
-			continue
-		}
-		conn := &Conn{
-			Cid:             uuid.New(),
-			Uid:             "",
-			mux:             sync.Mutex{},
-			rawConn:         rawConn,
-			stopSig:         atomic.Int32{},
-			stop:            make(chan int, 1),
-			server:          s,
-			GroupId:         "",
-			lastReceiveTime: time.Now(),
-			element:         nil,
-			tickElement:     nil,
-			topic:           "",
-		}
-		s.handleConn(conn)
+		acceptPool.Submit(func() {
+			rawConn.SetReadDeadline(time.Now().Add(s.UpgradeDeadline))
+			_, err = ws.Upgrade(rawConn)
+			if err != nil {
+				Errorf("握手失败 err=%s", err)
+				rawConn.Close()
+				return
+			}
+			conn := &Conn{
+				cid:             uuid.New(),
+				uid:             "",
+				mux:             sync.Mutex{},
+				rawConn:         rawConn,
+				stopSig:         atomic.Int32{},
+				server:          s,
+				groupId:         "",
+				lastReceiveTime: time.Now(),
+				element:         nil,
+				tickElement:     nil,
+				topic:           "",
+			}
+			s.handleConn(conn)
+		})
 	}
 }
 
@@ -134,38 +140,53 @@ func (s *Server) Start(block bool) {
 }
 
 func (s *Server) ShutDown() {
-	// 关闭listener
 	s.Listener.Close()
-	// 发送关闭帧
-	allConn := connMgr.GetAllConn()
-	for _, conn := range allConn {
-		analyzeProtocolPool.Submit(func() {
-			conn.WriteMsg(&RawMsg{WsMsgType: ws.OpClose, DeadLine: time.Now().Add(time.Second)})
-		})
+
+	closewait := sync.WaitGroup{}
+	for _, conn := range s.connMgr.GetAllConn() {
+		closewait.Add(1)
+		go func() {
+			conn.Close("服务器关闭")
+			closewait.Done()
+		}()
 	}
-	// 对已经收到的帧进行处理
-	s.wg.Wait()
-	time.Sleep(500 * time.Millisecond)
-	allConn = connMgr.GetAllConn()
-	for _, conn := range allConn {
-		conn.Close("服务器关闭")
-	}
+	closewait.Wait()
 	for _, poll := range s.PollList {
 		poll.Close()
 	}
+	s.wg.Wait()
+}
+
+type loadBalancePolicy int
+
+const (
+	roundRobinLoadBalance loadBalancePolicy = iota
+)
+
+func (s *Server) selectPoller(policy loadBalancePolicy) netpoll.Poller {
+	switch policy {
+	case roundRobinLoadBalance:
+		s.Seq++
+		return s.PollList[s.Seq%(s.cpuNum-1)]
+	}
+	s.Seq++
+	return s.PollList[s.Seq%(s.cpuNum-1)]
+}
+
+func (s *Server) addConn(conn *Conn) {
+	s.connMgr.Add(conn)
+	callOnConnStateChange(conn, StateNew, "")
+	s.ConnNum.Add(1)
 }
 
 func (s *Server) handleConn(conn *Conn) {
-	connMgr.Add(conn)
-	callOnConnStateChange(conn, StateNew, "")
-	s.ConnNum.Add(1)
-	rawConn := conn.rawConn
-	desc := netpoll.Must(netpoll.Handle(rawConn, netpoll.EventRead))
-	poller := s.PollList[s.Seq%7]
-	s.Seq++
+	s.addConn(conn)
+	desc := netpoll.Must(netpoll.Handle(conn.rawConn, netpoll.EventRead))
+	poller := s.selectPoller(roundRobinLoadBalance)
 	conn.poll = poller
 	conn.pollDesc = desc
-	err := poller.Start(desc, func(event netpoll.Event) {
+
+	err := poller.Start(desc, func(event netpoll.Event, notice *sync.WaitGroup) {
 		callOnConnStateChange(conn, StateActive, "")
 		if event&netpoll.EventRead == 0 {
 			return
@@ -174,29 +195,23 @@ func (s *Server) handleConn(conn *Conn) {
 			conn.Close("正常关闭")
 			return
 		}
-		msgList, err := getProtocolContent(conn, s.ReadHeaderDeadline, s.ReadPayloadDeadline)
-		for _, msg := range msgList {
-			packet := msg
-			handlePool.Submit(func() {
-				s.conTicker.AddTickConn(conn)
-				if packet.header.OpCode == ws.OpClose {
-					conn.Close("对端主动关闭")
-					return
-				}
-				if packet.header.OpCode == ws.OpPing {
-					sendPing(conn)
-					return
-				}
-				if len(packet.data) == 0 {
-					return
-				}
-				dataHandler(conn, packet.data, packet.header.OpCode)
-			})
-		}
-		if err != nil {
-			conn.Close("读取请求体" + err.Error())
-			return
-		}
+		analyzeProtocolPool.Submit(func() {
+			defer notice.Done()
+			packets, err := protocolContent(conn, s.ReadHeaderDeadline, s.ReadPayloadDeadline)
+			for _, msg := range packets {
+				packet := msg
+				handlePool.Submit(func() {
+					s.wg.Add(1)
+					defer s.wg.Done()
+					dataHandler(conn, packet.data, packet.header.OpCode)
+				})
+			}
+			if err != nil {
+				conn.Close("读取请求体" + err.Error())
+				return
+			}
+		})
+
 	})
 	if err != nil {
 		Errorf("poll start fail err=%s", err)

@@ -25,10 +25,10 @@ func SendMsg(data []byte, uid, groupId, topic string) {
 	}
 	for _, conn := range connList {
 		c := conn
-		if len(uid) != 0 && conn.Uid != uid {
+		if len(uid) != 0 && conn.uid != uid {
 			continue
 		}
-		if len(groupId) != 0 && conn.GroupId != groupId {
+		if len(groupId) != 0 && conn.groupId != groupId {
 			continue
 		}
 		if len(topic) != 0 && conn.topic != topic {

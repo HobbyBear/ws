@@ -201,7 +201,7 @@ type Kevents [8]Kevent
 
 // KeventHandler is a function that will be called when event occures on
 // registered identifier.
-type KeventHandler func(Kevent)
+type KeventHandler func(kevent Kevent, notice *sync.WaitGroup)
 
 // KqueueConfig contains options for configuration kqueue instance.
 type KqueueConfig struct {
@@ -226,6 +226,7 @@ type Kqueue struct {
 	cb     map[int]KeventHandler
 	done   chan struct{}
 	closed bool
+	notice sync.WaitGroup
 }
 
 // KqueueCreate creates new kqueue instance.
@@ -239,9 +240,10 @@ func KqueueCreate(c *KqueueConfig) (*Kqueue, error) {
 	}
 
 	kq := &Kqueue{
-		fd:   fd,
-		cb:   make(map[int]KeventHandler),
-		done: make(chan struct{}),
+		fd:     fd,
+		cb:     make(map[int]KeventHandler),
+		done:   make(chan struct{}),
+		notice: sync.WaitGroup{},
 	}
 
 	go kq.wait(config.OnWaitError)
@@ -375,12 +377,14 @@ func (k *Kqueue) wait(onError func(error)) {
 		for i, cb := range cbs {
 			if cb != nil {
 				e := evs[i]
+				k.notice.Add(1)
 				cb(Kevent{
 					Filter: KeventFilter(e.Filter),
 					Flags:  KeventFlag(e.Flags),
 					Data:   e.Data,
 					Fflags: e.Fflags,
-				})
+				}, &k.notice)
+				k.notice.Wait()
 				cbs[i] = nil
 			}
 		}

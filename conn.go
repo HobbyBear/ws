@@ -10,18 +10,17 @@ import (
 	"net"
 	"sync"
 	"time"
-	"ws/internal/netpoll"
+	"ws/netpoll"
 )
 
 type Conn struct {
-	Cid             string
-	Uid             string
+	cid             string
+	uid             string
 	mux             sync.Mutex
 	rawConn         net.Conn
 	stopSig         atomic.Int32
-	stop            chan int
 	server          *Server
-	GroupId         string
+	groupId         string
 	lastReceiveTime time.Time
 	element         *list.Element
 	tickElement     *list.Element
@@ -47,13 +46,13 @@ func (c *Conn) WriteMsg(data *RawMsg) error {
 	if data.WsMsgType.IsControl() {
 		w := newBuffWriter(c.rawConn)
 		wsutil.WriteServerMessage(w, data.WsMsgType, data.Content)
-		returnBuffWriterPoll(w)
+		putBuffWriter(w)
 		return nil
 	}
 	if data.WsMsgType.IsData() {
 		w := newBuffWriter(c.rawConn)
 		wsutil.WriteServerMessage(w, data.WsMsgType, data.Content)
-		returnBuffWriterPoll(w)
+		putBuffWriter(w)
 		return nil
 	}
 	return errors.New("websocket: bad write message type")
@@ -68,9 +67,8 @@ func (c *Conn) Close(reason string) {
 	defer c.mux.Unlock()
 	c.stopSig.Store(1)
 	c.server.ConnNum.Sub(1)
-	defaultConnMgr.Del(c)
+	c.server.connMgr.Del(c)
 	callOnConnStateChange(c, StateClosed, reason)
-	c.stop <- 1
 	c.poll.Stop(c.pollDesc)
 	c.rawConn.Close()
 }

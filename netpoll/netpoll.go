@@ -48,6 +48,7 @@ package netpoll
 import (
 	"fmt"
 	"log"
+	"sync"
 )
 
 var (
@@ -164,7 +165,7 @@ type Poller interface {
 
 // CallbackFn is a function that will be called on kernel i/o event
 // notification.
-type CallbackFn func(Event)
+type CallbackFn func(event Event, notice *sync.WaitGroup)
 
 // Config contains options for Poller configuration.
 type Config struct {

@@ -5,6 +5,7 @@ package netpoll
 
 import (
 	"os"
+	"sync"
 )
 
 // New creates new kqueue-based Poller instance with given config.
@@ -18,7 +19,9 @@ func New(c *Config) (Poller, error) {
 		return nil, err
 	}
 
-	return poller{kq}, nil
+	return poller{
+		Kqueue: kq,
+	}, nil
 }
 
 type poller struct {
@@ -27,7 +30,7 @@ type poller struct {
 
 func (p poller) Start(desc *Desc, cb CallbackFn) error {
 	n, events := toKevents(desc.event, true)
-	err := p.Add(desc.fd(), events, n, func(kev Kevent) {
+	err := p.Add(desc.fd(), events, n, func(kev Kevent, notice *sync.WaitGroup) {
 		var (
 			event Event
 
@@ -60,7 +63,7 @@ func (p poller) Start(desc *Desc, cb CallbackFn) error {
 			event |= EventPollerClosed
 		}
 
-		cb(event)
+		cb(event, notice)
 	})
 	if err == nil {
 		if err = setNonblock(desc.fd(), true); err != nil {

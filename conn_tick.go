@@ -17,13 +17,13 @@ type ConnTick struct {
 func (c *ConnTick) AddTickConn(conn *Conn) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
-	if _, ok := c.TickMap[conn.Cid]; ok {
-		delete(c.TickMap, conn.Cid)
+	if _, ok := c.TickMap[conn.cid]; ok {
+		delete(c.TickMap, conn.cid)
 		c.TickList.Remove(conn.tickElement)
 	}
 	conn.lastReceiveTime = time.Now()
 	conn.tickElement = c.TickList.PushBack(conn)
-	c.TickMap[conn.Cid] = conn
+	c.TickMap[conn.cid] = conn
 }
 
 func (c *ConnTick) Start() {
@@ -35,7 +35,7 @@ func (c *ConnTick) Start() {
 				c.mux.Lock()
 				for e := c.TickList.Front(); e != nil; {
 					if conn, ok := e.Value.(*Conn); ok && time.Now().Sub(conn.lastReceiveTime) > time.Duration(c.TickExpireSec)*time.Second {
-						delete(c.TickMap, conn.Cid)
+						delete(c.TickMap, conn.cid)
 						next := e.Next()
 						go func() {
 							conn.Close("超时关闭")

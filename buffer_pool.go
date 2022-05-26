@@ -28,8 +28,6 @@ func newBufioReader(r io.Reader) *bufio.Reader {
 		br.Reset(r)
 		return br
 	}
-	// Note: if this reader size is ever changed, update
-	// TestHandlerBodyClose's assumptions.
 	return bufio.NewReader(r)
 }
 
@@ -38,7 +36,7 @@ func putBufioReader(br *bufio.Reader) {
 	bufioReaderPool.Put(br)
 }
 
-func returnLimitReaderPoll(r *io.LimitedReader) {
+func putLimitReader(r *io.LimitedReader) {
 	limitReaderPool.Put(r)
 }
 
@@ -55,7 +53,7 @@ func newBuffWriter(ww io.Writer) *bufio.Writer {
 	return w
 }
 
-func returnBuffWriterPoll(w *bufio.Writer) {
+func putBuffWriter(w *bufio.Writer) {
 	w.Flush()
 	bufferWriterPool.Put(w)
 }

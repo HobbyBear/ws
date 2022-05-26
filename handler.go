@@ -2,7 +2,6 @@ package ws
 
 import (
 	"container/list"
-	"encoding/json"
 	"github.com/gobwas/ws"
 	jsoniter "github.com/json-iterator/go"
 	"sync"
@@ -48,20 +47,28 @@ var (
 	}
 
 	dataHandler = func(conn *Conn, data []byte, wsMsgType ws.OpCode) {
+		conn.server.conTicker.AddTickConn(conn)
+		if wsMsgType == ws.OpClose {
+			conn.Close("对端主动关闭")
+			return
+		}
+		if wsMsgType == ws.OpPing {
+			sendPing(conn)
+			return
+		}
+
+		if len(data) == 0 {
+			return
+		}
+
 		var (
-			msg   = &DataMsg{}
-			json2 = jsoniter.ConfigCompatibleWithStandardLibrary
-			err   error
+			msg  = &DataMsg{}
+			json = jsoniter.ConfigCompatibleWithStandardLibrary
+			err  error
 		)
-		err = json2.Unmarshal(data, msg)
+		err = json.Unmarshal(data, msg)
 		if err != nil {
 			Errorf("data msg is invalid err=%s data=%s", err, string(data))
-			err = json.Unmarshal(data, msg)
-			if err != nil {
-				Errorf("data msg is invalid2 err=%s data=%s", err, string(data))
-			} else {
-				Errorf("data msg is invalid3 err=%s data=%s", err, string(data))
-			}
 			return
 		}
 
@@ -117,11 +124,11 @@ func (cm *DefaultConnMgr) GetAllConn() []*Conn {
 func (cm *DefaultConnMgr) Add(c *Conn) {
 	cm.mux.Lock()
 	defer cm.mux.Unlock()
-	if len(c.Uid) != 0 {
-		cm.UidConnMap[c.Uid] = append(cm.UidConnMap[c.Uid], c)
+	if len(c.uid) != 0 {
+		cm.UidConnMap[c.uid] = append(cm.UidConnMap[c.uid], c)
 	}
-	if len(c.GroupId) != 0 {
-		cm.GroupConnMap[c.GroupId] = append(cm.UidConnMap[c.GroupId], c)
+	if len(c.groupId) != 0 {
+		cm.GroupConnMap[c.groupId] = append(cm.UidConnMap[c.groupId], c)
 	}
 	e := cm.All.PushFront(c)
 	c.element = e
@@ -138,8 +145,8 @@ func (cm *DefaultConnMgr) GetConnByGroupId(groupId string) []*Conn {
 func (cm *DefaultConnMgr) Del(conn *Conn) {
 	cm.mux.Lock()
 	defer cm.mux.Unlock()
-	delete(cm.UidConnMap, conn.Uid)
-	delete(cm.GroupConnMap, conn.GroupId)
+	delete(cm.UidConnMap, conn.uid)
+	delete(cm.GroupConnMap, conn.groupId)
 	cm.All.Remove(conn.element)
 }
 

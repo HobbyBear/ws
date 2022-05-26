@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"sync"
 	"time"
-	"ws/internal/netpoll"
+	"ws/netpoll"
 )
 
 func InitWs(addr string, options ...Option) *Server {
@@ -28,13 +28,14 @@ func InitWs(addr string, options ...Option) *Server {
 		UpgradeDeadline:     3 * time.Second,
 		ReadHeaderDeadline:  1 * time.Second,
 		ReadPayloadDeadline: 2 * time.Second,
+		cpuNum:              runtime.NumCPU(),
+		connMgr:             defaultConnMgr,
 	}
 	for _, op := range options {
 		op(s)
 	}
-	numCpu := runtime.NumCPU()
-	s.PollList = make([]netpoll.Poller, numCpu)
-	for i := 0; i < numCpu; i++ {
+	s.PollList = make([]netpoll.Poller, s.cpuNum)
+	for i := 0; i < s.cpuNum; i++ {
 		s.PollList[i], _ = netpoll.New(&netpoll.Config{
 			OnWaitError: func(err error) {
 				Errorf("poll internal error err=%s", err)

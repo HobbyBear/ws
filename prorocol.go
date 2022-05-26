@@ -7,16 +7,16 @@ import (
 	"time"
 )
 
-type message struct {
+type packet struct {
 	header ws.Header
 	data   []byte
 }
 
-func getProtocolContent(conn *Conn, headDeadLine time.Duration, bodyDeadLine time.Duration) ([]*message, error) {
+func protocolContent(conn *Conn, headDeadLine time.Duration, bodyDeadLine time.Duration) ([]*packet, error) {
 
 	var (
 		r       = newBufioReader(conn.rawConn)
-		msgList []*message
+		packets []*packet
 	)
 	defer putBufioReader(r)
 	for {
@@ -25,15 +25,16 @@ func getProtocolContent(conn *Conn, headDeadLine time.Duration, bodyDeadLine tim
 		conn.rawConn.SetReadDeadline(time.Now().Add(headDeadLine))
 		header, err := readHeader(r)
 		if err != nil {
-			return msgList, err
+			return packets, err
 		}
 		lr := newLimitReader(r, header.Length)
 		conn.rawConn.SetReadDeadline(time.Now().Add(bodyDeadLine))
 		payload, err := io.ReadAll(lr)
-		returnLimitReaderPoll(lr)
+		putLimitReader(lr)
 		if err != nil {
-			return msgList, err
+			return packets, err
 		}
+
 		if header.Masked {
 			ws.Cipher(payload, header.Mask, 0)
 		}
@@ -43,12 +44,12 @@ func getProtocolContent(conn *Conn, headDeadLine time.Duration, bodyDeadLine tim
 			goto readFrame
 		}
 		if len(buf) != 0 {
-			msgList = append(msgList, &message{
+			packets = append(packets, &packet{
 				header: header,
 				data:   append(buf, payload...),
 			})
 		} else {
-			msgList = append(msgList, &message{
+			packets = append(packets, &packet{
 				header: header,
 				data:   payload,
 			})
@@ -57,7 +58,7 @@ func getProtocolContent(conn *Conn, headDeadLine time.Duration, bodyDeadLine tim
 			break
 		}
 	}
-	return msgList, nil
+	return packets, nil
 }
 
 const (
@@ -76,6 +77,7 @@ func readHeader(r io.Reader) (h ws.Header, err error) {
 	// Prepare to hold first 2 bytes to choose size of next read.
 	lr := newLimitReader(r, 2)
 	defer limitReaderPool.Put(lr)
+
 	bts, err := io.ReadAll(lr)
 	if err != nil || len(bts) == 0 {
 		return

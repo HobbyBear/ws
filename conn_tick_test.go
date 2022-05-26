@@ -14,8 +14,8 @@ func TestConnTick_Start(t *testing.T) {
 		TickMap:  map[string]*Conn{},
 	}
 	tiker.AddTickConn(&Conn{
-		Cid:             "123",
-		Uid:             "",
+		cid:             "123",
+		uid:             "",
 		lastReceiveTime: time.Time{},
 	})
 	tiker.Start()

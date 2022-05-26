@@ -5,6 +5,7 @@ package netpoll
 
 import (
 	"os"
+	"sync"
 )
 
 // New creates new epoll-based Poller instance with given config.
@@ -29,7 +30,7 @@ type poller struct {
 // Start implements Poller.Start() method.
 func (ep poller) Start(desc *Desc, cb CallbackFn) error {
 	err := ep.Add(desc.fd(), toEpollEvent(desc.event),
-		func(ep EpollEvent) {
+		func(ep EpollEvent, notice *sync.WaitGroup) {
 			var event Event
 
 			if ep&EPOLLHUP != 0 {
@@ -51,7 +52,7 @@ func (ep poller) Start(desc *Desc, cb CallbackFn) error {
 				event |= EventPollerClosed
 			}
 
-			cb(event)
+			cb(event, notice)
 		},
 	)
 	if err == nil {

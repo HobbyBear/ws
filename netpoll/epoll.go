@@ -62,7 +62,8 @@ type Epoll struct {
 	closed   bool
 	waitDone chan struct{}
 
-	callbacks map[int]func(EpollEvent)
+	callbacks map[int]func(EpollEvent, *sync.WaitGroup)
+	notice    sync.WaitGroup
 }
 
 // EpollConfig contains options for Epoll instance configuration.
@@ -112,8 +113,9 @@ func EpollCreate(c *EpollConfig) (*Epoll, error) {
 	ep := &Epoll{
 		fd:        fd,
 		eventFd:   eventFd,
-		callbacks: make(map[int]func(EpollEvent)),
+		callbacks: make(map[int]func(EpollEvent, *sync.WaitGroup)),
 		waitDone:  make(chan struct{}),
+		notice:    sync.WaitGroup{},
 	}
 
 	// Run wait loop.
@@ -160,17 +162,19 @@ func (ep *Epoll) Close() (err error) {
 
 	for _, cb := range callbacks {
 		if cb != nil {
-			cb(_EPOLLCLOSED)
+			// todo 资源释放逻辑
+			ep.notice.Add(1)
+			cb(_EPOLLCLOSED, &ep.notice)
+			ep.notice.Wait()
 		}
 	}
-
 	return
 }
 
 // Add adds fd to epoll set with given events.
 // Callback will be called on each received event from epoll.
 // Note that _EPOLLCLOSED is triggered for every cb when epoll closed.
-func (ep *Epoll) Add(fd int, events EpollEvent, cb func(EpollEvent)) (err error) {
+func (ep *Epoll) Add(fd int, events EpollEvent, cb func(EpollEvent, *sync.WaitGroup)) (err error) {
 	ev := &unix.EpollEvent{
 		Events: uint32(events),
 		Fd:     int32(fd),
@@ -241,7 +245,7 @@ func (ep *Epoll) wait(onError func(error)) {
 	}()
 
 	events := make([]unix.EpollEvent, maxWaitEventsBegin)
-	callbacks := make([]func(EpollEvent), 0, maxWaitEventsBegin)
+	callbacks := make([]func(EpollEvent, *sync.WaitGroup), 0, maxWaitEventsBegin)
 
 	for {
 		n, err := unix.EpollWait(ep.fd, events, -1)
@@ -268,14 +272,15 @@ func (ep *Epoll) wait(onError func(error)) {
 
 		for i := 0; i < n; i++ {
 			if cb := callbacks[i]; cb != nil {
-				cb(EpollEvent(events[i].Events))
+				ep.notice.Add(1)
+				cb(EpollEvent(events[i].Events), &ep.notice)
 				callbacks[i] = nil
 			}
 		}
-
+		ep.notice.Wait()
 		if n == len(events) && n*2 <= maxWaitEventsStop {
 			events = make([]unix.EpollEvent, n*2)
-			callbacks = make([]func(EpollEvent), 0, n*2)
+			callbacks = make([]func(EpollEvent, *sync.WaitGroup), 0, n*2)
 		}
 	}
 }

@@ -29,8 +29,8 @@ func preDataHandler(conn *Conn, msg *DataMsg) {
 	case SubMsgType:
 		conn.topic = msg.Topic
 	case Login:
-		conn.Uid = msg.Uid
-		conn.GroupId = msg.GroupId
+		conn.uid = msg.Uid
+		conn.groupId = msg.GroupId
 	case UnSubMsgType:
 		conn.topic = ""
 
