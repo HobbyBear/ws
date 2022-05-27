@@ -23,7 +23,7 @@ func InitWs(addr string, options ...Option) *Server {
 		},
 		Listener:            nil,
 		PollList:            nil,
-		Seq:                 0,
+		Seq:                 atomic.Int32{},
 		Addr:                addr,
 		UpgradeDeadline:     3 * time.Second,
 		ReadHeaderDeadline:  1 * time.Second,

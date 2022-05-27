@@ -54,7 +54,7 @@ type Server struct {
 	conTicker           *ConnTick
 	Listener            net.Listener
 	PollList            []netpoll.Poller
-	Seq                 int
+	Seq                 atomic.Int32
 	Addr                string
 	UpgradeDeadline     time.Duration // 升级ws协议的超时时间
 	ReadHeaderDeadline  time.Duration // 读取header的超时时间
@@ -166,11 +166,11 @@ const (
 func (s *Server) selectPoller(policy loadBalancePolicy) netpoll.Poller {
 	switch policy {
 	case roundRobinLoadBalance:
-		s.Seq++
-		return s.PollList[s.Seq%(s.cpuNum-1)]
+		s.Seq.Inc()
+		return s.PollList[int(s.Seq.Load())%(s.cpuNum-1)]
 	}
-	s.Seq++
-	return s.PollList[s.Seq%(s.cpuNum-1)]
+	s.Seq.Inc()
+	return s.PollList[int(s.Seq.Load())%(s.cpuNum-1)]
 }
 
 func (s *Server) addConn(conn *Conn) {
