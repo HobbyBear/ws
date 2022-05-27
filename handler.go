@@ -145,8 +145,36 @@ func (cm *DefaultConnMgr) GetConnByGroupId(groupId string) []*Conn {
 func (cm *DefaultConnMgr) Del(conn *Conn) {
 	cm.mux.Lock()
 	defer cm.mux.Unlock()
-	delete(cm.UidConnMap, conn.uid)
-	delete(cm.GroupConnMap, conn.groupId)
+	if connList, ok := cm.UidConnMap[conn.uid]; ok {
+		for i, c := range connList {
+			if c.cid == conn.cid {
+				index := len(connList) - 1
+				if i+1 < len(connList)-1 {
+					index = i + 1
+				}
+				connList = append(connList[:i], connList[index:]...)
+				break
+			}
+		}
+		if len(connList) == 0 {
+			delete(cm.UidConnMap, conn.uid)
+		}
+	}
+	if connList, ok := cm.GroupConnMap[conn.groupId]; ok {
+		for i, c := range connList {
+			if c.cid == conn.cid {
+				index := len(connList) - 1
+				if i+1 < len(connList)-1 {
+					index = i + 1
+				}
+				connList = append(connList[:i], connList[index:]...)
+				break
+			}
+		}
+		if len(connList) == 0 {
+			delete(cm.GroupConnMap, conn.groupId)
+		}
+	}
 	cm.All.Remove(conn.element)
 }
 

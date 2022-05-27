@@ -66,9 +66,7 @@ func (c *Conn) Close(reason string) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 	c.stopSig.Store(1)
-	c.server.ConnNum.Sub(1)
-	c.server.connMgr.Del(c)
+	c.server.onConnClose(c)
 	callOnConnStateChange(c, StateClosed, reason)
-	c.poll.Stop(c.pollDesc)
 	c.rawConn.Close()
 }

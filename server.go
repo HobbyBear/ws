@@ -157,6 +157,12 @@ func (s *Server) ShutDown() {
 	s.wg.Wait()
 }
 
+func (s *Server) onConnClose(c *Conn) {
+	s.ConnNum.Sub(1)
+	s.connMgr.Del(c)
+	c.poll.Stop(c.pollDesc)
+}
+
 type loadBalancePolicy int
 
 const (
