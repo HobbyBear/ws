@@ -1,4 +1,4 @@
-package ws
+package wsgateway
 
 import (
 	"container/list"
@@ -10,7 +10,8 @@ import (
 	"net"
 	"sync"
 	"time"
-	"ws/netpoll"
+	"ws/pkg/bufferpool"
+	"ws/pkg/netpoll"
 )
 
 type Conn struct {
@@ -29,30 +30,23 @@ type Conn struct {
 	pollDesc        *netpoll.Desc
 }
 
-type RawMsg struct {
-	WsMsgType ws.OpCode `json:"-"`
-	MsgType   string    `json:"msg_id,omitempty"`
-	Content   []byte    `json:"content,omitempty"`
-	DeadLine  time.Time `json:"-"`
-}
-
 // todo 异步写
-func (c *Conn) WriteMsg(data *RawMsg) error {
+func (c *Conn) WriteMsg(opCode ws.OpCode, data []byte) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 	if c.stopSig.Load() == 1 {
 		return nil
 	}
-	if data.WsMsgType.IsControl() {
-		w := newBuffWriter(c.rawConn)
-		wsutil.WriteServerMessage(w, data.WsMsgType, data.Content)
-		putBuffWriter(w)
+	if opCode.IsControl() {
+		w := bufferpool.NewBuffWriter(c.rawConn)
+		wsutil.WriteServerMessage(w, opCode, data)
+		bufferpool.PutBuffWriter(w)
 		return nil
 	}
-	if data.WsMsgType.IsData() {
-		w := newBuffWriter(c.rawConn)
-		wsutil.WriteServerMessage(w, data.WsMsgType, data.Content)
-		putBuffWriter(w)
+	if opCode.IsData() {
+		w := bufferpool.NewBuffWriter(c.rawConn)
+		wsutil.WriteServerMessage(w, opCode, data)
+		bufferpool.PutBuffWriter(w)
 		return nil
 	}
 	return errors.New("websocket: bad write message type")
@@ -67,6 +61,5 @@ func (c *Conn) Close(reason string) {
 	defer c.mux.Unlock()
 	c.stopSig.Store(1)
 	c.server.onConnClose(c)
-	callOnConnStateChange(c, StateClosed, reason)
 	c.rawConn.Close()
 }

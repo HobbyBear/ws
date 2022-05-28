@@ -1,8 +1,9 @@
-package ws
+package wsgateway
 
 import (
 	"fmt"
 	"github.com/gobwas/ws"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/panjf2000/ants"
 	"github.com/pborman/uuid"
 	"go.uber.org/atomic"
@@ -10,7 +11,10 @@ import (
 	"net"
 	"sync"
 	"time"
-	"ws/netpoll"
+	"ws/broker"
+	"ws/msg"
+	"ws/pkg/logger"
+	"ws/pkg/netpoll"
 )
 
 var (
@@ -41,65 +45,43 @@ const (
 	StateClosed
 )
 
-type Request struct {
-	Conn    *Conn
-	Data    []byte
-	MsgType int
-}
-
 type Server struct {
-	Logger              Log
+	Logger              logger.Log
 	wg                  sync.WaitGroup
-	ConnNum             atomic.Int32
-	conTicker           *ConnTick
-	Listener            net.Listener
-	PollList            []netpoll.Poller
-	Seq                 atomic.Int32
+	connNum             atomic.Int32
+	conTicker           *connTick
+	listener            net.Listener
+	pollList            []netpoll.Poller
+	pollSeq             atomic.Int32
 	Addr                string
 	UpgradeDeadline     time.Duration // 升级ws协议的超时时间
 	ReadHeaderDeadline  time.Duration // 读取header的超时时间
 	ReadPayloadDeadline time.Duration // 读取payload的超时时间
 	cpuNum              int
-	connMgr             ConnMgr
-}
-
-type Option func(s *Server)
-
-func SetLogger(logger Log) Option {
-	return func(s *Server) {
-		s.Logger = logger
-	}
-}
-
-func SetTickInterval(intervalSec int) Option {
-	return func(s *Server) {
-		s.conTicker.WheelIntervalSec = intervalSec
-	}
-}
-
-func SetTickExpire(expireSec int) Option {
-	return func(s *Server) {
-		s.conTicker.TickExpireSec = expireSec
-	}
+	ConnMgr             ConnMgr
+	Broker              broker.Broker
+	Mux                 Handler
+	TickOpen            bool // true 代表开启心跳检测
+	CallConnStateChange func(c *Conn, state ConnState)
 }
 
 func (s *Server) startListen() {
 	var err error
-	s.Listener, err = net.Listen("tcp", s.Addr)
+	s.listener, err = net.Listen("tcp", s.Addr)
 	if err != nil {
 		log.Fatal(err)
 	}
 	for {
-		rawConn, err := s.Listener.Accept()
+		rawConn, err := s.listener.Accept()
 		if err != nil {
-			log.Printf("Listener.Accept err=%s \n", err)
+			log.Printf("listener.Accept err=%s \n", err)
 			return
 		}
 		acceptPool.Submit(func() {
 			rawConn.SetReadDeadline(time.Now().Add(s.UpgradeDeadline))
 			_, err = ws.Upgrade(rawConn)
 			if err != nil {
-				Errorf("握手失败 err=%s", err)
+				logger.Errorf("握手失败 err=%s", err)
 				rawConn.Close()
 				return
 			}
@@ -122,16 +104,21 @@ func (s *Server) startListen() {
 }
 
 func (s *Server) Start(block bool) {
+	// todo 调试代码，待删除
 	go func() {
 		timer := time.NewTimer(3 * time.Second)
 		for {
 			select {
 			case <-timer.C:
-				fmt.Println("连接数", s.ConnNum.Load())
+				fmt.Println("连接数", s.connNum.Load())
 				timer.Reset(3 * time.Second)
 			}
 		}
 	}()
+	s.conTicker.open = s.TickOpen
+	initConsumer(s)
+	s.conTicker.Start()
+
 	if block {
 		s.startListen()
 		return
@@ -140,10 +127,10 @@ func (s *Server) Start(block bool) {
 }
 
 func (s *Server) ShutDown() {
-	s.Listener.Close()
-
+	s.listener.Close()
+	s.Broker.Close()
 	closewait := sync.WaitGroup{}
-	for _, conn := range s.connMgr.GetAllConn() {
+	for _, conn := range s.ConnMgr.GetAllConn() {
 		closewait.Add(1)
 		go func() {
 			conn.Close("服务器关闭")
@@ -151,16 +138,18 @@ func (s *Server) ShutDown() {
 		}()
 	}
 	closewait.Wait()
-	for _, poll := range s.PollList {
+	for _, poll := range s.pollList {
 		poll.Close()
 	}
 	s.wg.Wait()
 }
 
 func (s *Server) onConnClose(c *Conn) {
-	s.ConnNum.Sub(1)
-	s.connMgr.Del(c)
+	s.connNum.Sub(1)
+	s.ConnMgr.Del(c)
 	c.poll.Stop(c.pollDesc)
+	s.CallConnStateChange(c, StateClosed)
+
 }
 
 type loadBalancePolicy int
@@ -172,17 +161,17 @@ const (
 func (s *Server) selectPoller(policy loadBalancePolicy) netpoll.Poller {
 	switch policy {
 	case roundRobinLoadBalance:
-		s.Seq.Inc()
-		return s.PollList[int(s.Seq.Load())%(s.cpuNum-1)]
+		s.pollSeq.Inc()
+		return s.pollList[int(s.pollSeq.Load())%(s.cpuNum-1)]
 	}
-	s.Seq.Inc()
-	return s.PollList[int(s.Seq.Load())%(s.cpuNum-1)]
+	s.pollSeq.Inc()
+	return s.pollList[int(s.pollSeq.Load())%(s.cpuNum-1)]
 }
 
 func (s *Server) addConn(conn *Conn) {
-	s.connMgr.Add(conn)
-	callOnConnStateChange(conn, StateNew, "")
-	s.ConnNum.Add(1)
+	s.ConnMgr.Add(conn)
+	s.CallConnStateChange(conn, StateNew)
+	s.connNum.Add(1)
 }
 
 func (s *Server) handleConn(conn *Conn) {
@@ -193,7 +182,7 @@ func (s *Server) handleConn(conn *Conn) {
 	conn.pollDesc = desc
 
 	err := poller.Start(desc, func(event netpoll.Event, notice *sync.WaitGroup) {
-		callOnConnStateChange(conn, StateActive, "")
+		s.CallConnStateChange(conn, StateActive)
 		if event&netpoll.EventRead == 0 {
 			return
 		}
@@ -204,12 +193,32 @@ func (s *Server) handleConn(conn *Conn) {
 		analyzeProtocolPool.Submit(func() {
 			defer notice.Done()
 			packets, err := protocolContent(conn, s.ReadHeaderDeadline, s.ReadPayloadDeadline)
-			for _, msg := range packets {
-				packet := msg
+			for _, packetData := range packets {
+				packet := packetData
 				handlePool.Submit(func() {
 					s.wg.Add(1)
 					defer s.wg.Done()
-					dataHandler(conn, packet.data, packet.header.OpCode)
+					var (
+						reqMsg = &msg.ReqMsg{}
+						json   = jsoniter.ConfigCompatibleWithStandardLibrary
+						err    error
+					)
+					if len(packet.data) != 0 {
+						err = json.Unmarshal(packet.data, reqMsg)
+						if err != nil {
+							logger.Errorf("data reqMsg is invalid err=%s data=%s", err, string(reqMsg.Data))
+							return
+						}
+					}
+					switch packet.header.OpCode {
+					case ws.OpPing:
+						reqMsg.Path = Ping
+					case ws.OpPong:
+						reqMsg.Path = Pong
+					case ws.OpClose:
+						reqMsg.Path = Close
+					}
+					s.Mux.ServerWs(packet.header.OpCode, reqMsg, conn)
 				})
 			}
 			if err != nil {
@@ -220,6 +229,6 @@ func (s *Server) handleConn(conn *Conn) {
 
 	})
 	if err != nil {
-		Errorf("poll start fail err=%s", err)
+		logger.Errorf("poll start fail err=%s", err)
 	}
 }

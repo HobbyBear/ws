@@ -1,4 +1,4 @@
-package ws
+package wsgateway
 
 import (
 	"container/list"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestConnTick_Start(t *testing.T) {
-	tiker := &ConnTick{
+	tiker := &connTick{
 		mux:      sync.Mutex{},
 		TickList: list.New(),
 		TickMap:  map[string]*Conn{},

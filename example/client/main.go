@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/gorilla/websocket"
@@ -9,7 +10,7 @@ import (
 	"net/url"
 	"nfw/nfw_base/utils/commfunc"
 	"time"
-	"ws"
+	"ws/msg"
 )
 
 var addr = flag.Int64("addr", 0, "http service address")
@@ -79,11 +80,12 @@ func main() {
 			go func() {
 				for {
 
-					data := ws.DataMsg{
-						MsgType: "1",
-						Content: "haha",
+					data := msg.ReqMsg{
+						Path: "1",
+						Data: []byte("haha"),
 					}
-					err := c.WriteMessage(websocket.TextMessage, data.MarshalJSON())
+					bytes, _ := json.Marshal(data)
+					err := c.WriteMessage(websocket.TextMessage, bytes)
 					if err != nil {
 						log.Println("write:", err)
 						return

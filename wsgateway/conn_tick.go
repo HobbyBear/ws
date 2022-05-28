@@ -1,4 +1,4 @@
-package ws
+package wsgateway
 
 import (
 	"container/list"
@@ -6,7 +6,8 @@ import (
 	"time"
 )
 
-type ConnTick struct {
+type connTick struct {
+	open             bool
 	mux              sync.Mutex
 	TickList         *list.List
 	TickMap          map[string]*Conn
@@ -14,7 +15,10 @@ type ConnTick struct {
 	TickExpireSec    int // 心跳过期的阀值
 }
 
-func (c *ConnTick) AddTickConn(conn *Conn) {
+func (c *connTick) AddTickConn(conn *Conn) {
+	if !c.open {
+		return
+	}
 	c.mux.Lock()
 	defer c.mux.Unlock()
 	if _, ok := c.TickMap[conn.cid]; ok {
@@ -26,7 +30,10 @@ func (c *ConnTick) AddTickConn(conn *Conn) {
 	c.TickMap[conn.cid] = conn
 }
 
-func (c *ConnTick) Start() {
+func (c *connTick) Start() {
+	if !c.open {
+		return
+	}
 	go func() {
 		timer := time.NewTimer(time.Duration(c.WheelIntervalSec) * time.Second)
 		for {

@@ -1,4 +1,4 @@
-package ws
+package logger
 
 import "fmt"
 
@@ -8,7 +8,7 @@ type Log interface {
 	Errorf(format string, args ...interface{})
 }
 
-var defaultLogger = &DefaultLogger{}
+var Default = &DefaultLogger{}
 
 type DefaultLogger struct {
 }
@@ -26,13 +26,13 @@ func (d DefaultLogger) Errorf(format string, args ...interface{}) {
 }
 
 func Infof(format string, args ...interface{}) {
-	defaultLogger.Infof(format, args...)
+	Default.Infof(format, args...)
 }
 
 func Debugf(format string, args ...interface{}) {
-	defaultLogger.Debugf(format, args...)
+	Default.Debugf(format, args...)
 }
 
 func Errorf(format string, args ...interface{}) {
-	defaultLogger.Errorf(format, args...)
+	Default.Errorf(format, args...)
 }
