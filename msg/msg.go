@@ -13,12 +13,12 @@ const (
 	PushAll
 )
 
-// Type 与业务层沟通的消息类型
-type Type int
+// ProduceType 与业务层沟通的消息类型
+type ProduceType int
 
 const (
-	Push Type = iota // 消息用于推送
-	Api              // 消息用于做功能性函数，比如踢人，禁言等。
+	Push ProduceType = iota // 消息用于推送
+	Api                     // 消息用于做功能性函数，比如踢人，禁言等。
 )
 
 type PushData struct {
@@ -36,17 +36,17 @@ type ApiData struct {
 }
 
 type ProduceMsg struct {
-	Type Type `json:"type"`
+	ProduceType ProduceType `json:"type"`
 	PushData
 	ApiData
 }
 
 func (p *ProduceMsg) IsPush() bool {
-	return p.Type == Push
+	return p.ProduceType == Push
 }
 
 func (p *ProduceMsg) IsApi() bool {
-	return p.Type == Api
+	return p.ProduceType == Api
 }
 
 func (p *ProduceMsg) Marshal() []byte {

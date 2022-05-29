@@ -129,12 +129,17 @@ func (s *Server) ShutDown() {
 		b.Close()
 	}
 	closewait := sync.WaitGroup{}
-	for _, conn := range s.ConnMgr.GetAllConn() {
+	connList := s.ConnMgr.GetAllConn()
+	for index, conn := range connList {
 		closewait.Add(1)
 		go func() {
 			conn.Close("服务器关闭")
 			closewait.Done()
 		}()
+		if index%1000 == 0 {
+			closewait.Wait()
+			time.Sleep(time.Millisecond * 500)
+		}
 	}
 	closewait.Wait()
 	for _, poll := range s.pollList {

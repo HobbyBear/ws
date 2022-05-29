@@ -13,9 +13,12 @@ type Client struct {
 func (c *Client) SendMsgToAll(data []byte, opCode ws.OpCode) error {
 
 	return c.Pub((&msg.ProduceMsg{
-		PType:  msg.PushAll,
-		Data:   data,
-		WsType: opCode,
+		PushData: msg.PushData{
+			PType:  msg.PushAll,
+			Data:   data,
+			WsType: opCode,
+		},
+		ProduceType: msg.Push,
 	}).Marshal())
 }
 
@@ -26,11 +29,14 @@ func (c *Client) SendMsg(data []byte, opCode ws.OpCode, uids []string, groupId, 
 	}
 
 	return c.Pub((&msg.ProduceMsg{
-		PType:  t,
-		Uids:   uids,
-		RoomId: groupId,
-		Topic:  topic,
-		Data:   data,
-		WsType: opCode,
+		PushData: msg.PushData{
+			PType:  t,
+			Uids:   uids,
+			RoomId: groupId,
+			Topic:  topic,
+			Data:   data,
+			WsType: opCode,
+		},
+		ProduceType: msg.Push,
 	}).Marshal())
 }
