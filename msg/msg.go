@@ -13,16 +13,43 @@ const (
 	PushAll
 )
 
-type PushMsg struct {
-	Type   PushType  `json:"type"`
+// Type 与业务层沟通的消息类型
+type Type int
+
+const (
+	Push Type = iota // 消息用于推送
+	Api              // 消息用于做功能性函数，比如踢人，禁言等。
+)
+
+type PushData struct {
+	PType  PushType  `json:"ptype,omitempty"`
 	Uids   []string  `json:"uids,omitempty"`
 	RoomId string    `json:"rid,omitempty"`
 	Topic  string    `json:"topic,omitempty"`
 	Data   []byte    `json:"data,omitempty"`
-	WsType ws.OpCode `json:"ws_type"`
+	WsType ws.OpCode `json:"ws_type,omitempty"`
 }
 
-func (p *PushMsg) Marshal() []byte {
+type ApiData struct {
+	Param []byte `json:"param,omitempty"`
+	Path  string `json:"path,omitempty"`
+}
+
+type ProduceMsg struct {
+	Type Type `json:"type"`
+	PushData
+	ApiData
+}
+
+func (p *ProduceMsg) IsPush() bool {
+	return p.Type == Push
+}
+
+func (p *ProduceMsg) IsApi() bool {
+	return p.Type == Api
+}
+
+func (p *ProduceMsg) Marshal() []byte {
 	data, _ := json.Marshal(p)
 	return data
 }
