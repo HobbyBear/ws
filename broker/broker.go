@@ -1,15 +1,13 @@
 package broker
 
-import "ws/msg"
-
 type Broker interface {
-	Pub(msg *msg.PushMsg) error
+	Pub(msg []byte) error
 	Sub() chan []byte
 	Close() error
 }
 
 type Producer interface {
-	Pub(msg *msg.PushMsg) error
+	Pub(msg []byte) error
 	Close() error
 }
 

@@ -17,25 +17,36 @@ func initConsumer(s *Server) {
 			case chanMsg := <-ch:
 				var pushMsg msg.PushMsg
 				json.Unmarshal(chanMsg, &pushMsg)
+				s.Logger.Infof("收到sub 消息%+v data=%s", pushMsg, string(pushMsg.Data))
 				switch pushMsg.Type {
 				case msg.PushSingle:
-					if connlist := s.ConnMgr.GetConnByUid(pushMsg.Uid); len(connlist) != 0 {
-						for _, conn := range connlist {
-							// todo 线程池处理
-							conn.WriteMsg(pushMsg.WsType, pushMsg.Data)
+					if connlist := s.ConnMgr.GetConnByUids(pushMsg.Uids); len(connlist) != 0 {
+						for _, conns := range connlist {
+							for _, conn := range conns {
+								c, mt, data := conn, pushMsg.WsType, pushMsg.Data
+								writeHandlePool.Submit(func() {
+									c.WriteMsg(mt, data)
+								})
+							}
 						}
 					}
 
 				case msg.PushGroup:
-					if connlist := s.ConnMgr.GetConnByGroupId(pushMsg.GroupId); len(connlist) != 0 {
+					if connlist := s.ConnMgr.GetConnByRoomId(pushMsg.RoomId); len(connlist) != 0 {
 						for _, conn := range connlist {
-							conn.WriteMsg(pushMsg.WsType, pushMsg.Data)
+							c, mt, data := conn, pushMsg.WsType, pushMsg.Data
+							writeHandlePool.Submit(func() {
+								c.WriteMsg(mt, data)
+							})
 						}
 					}
 				case msg.PushAll:
 					if connlist := s.ConnMgr.GetAllConn(); len(connlist) != 0 {
 						for _, conn := range connlist {
-							conn.WriteMsg(pushMsg.WsType, pushMsg.Data)
+							c, mt, data := conn, pushMsg.WsType, pushMsg.Data
+							writeHandlePool.Submit(func() {
+								c.WriteMsg(mt, data)
+							})
 						}
 					}
 				}

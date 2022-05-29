@@ -28,12 +28,15 @@ func NewWsMux() *WServerMux {
 	}
 	mux.AddHandler(SubMsgType, HandlerFunc(func(opCode ws.OpCode, reqMsg *msg.ReqMsg, conn *Conn) {
 		conn.topic = reqMsg.Topic
+		conn.server.CallConnStateChange(conn, StateSubTopic)
 	}))
 	mux.AddHandler(Login, HandlerFunc(func(opCode ws.OpCode, reqMsg *msg.ReqMsg, conn *Conn) {
 		conn.uid = reqMsg.Uid
+		conn.server.CallConnStateChange(conn, StateLogin)
 	}))
 	mux.AddHandler(UnSubMsgType, HandlerFunc(func(opCode ws.OpCode, reqMsg *msg.ReqMsg, conn *Conn) {
 		conn.topic = ""
+		conn.server.CallConnStateChange(conn, StateUnSubTopic)
 	}))
 	mux.AddHandler(Ping, HandlerFunc(func(opCode ws.OpCode, reqMsg *msg.ReqMsg, conn *Conn) {
 		conn.WriteMsg(ws.OpPong, nil)

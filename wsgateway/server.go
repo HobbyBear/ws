@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/gobwas/ws"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/panjf2000/ants"
 	"github.com/pborman/uuid"
 	"go.uber.org/atomic"
 	"log"
@@ -17,20 +16,12 @@ import (
 	"ws/pkg/netpoll"
 )
 
-var (
-	analyzeProtocolPool, _ = ants.NewPool(128)
-	handlePool, _          = ants.NewPool(128)
-	acceptPool, _          = ants.NewPool(128)
-)
-
 type ConnState int
 
 func (c ConnState) String() string {
 	switch c {
 	case StateNew:
 		return "new"
-	case StateActive:
-		return "active"
 	case StateClosed:
 		return "closed"
 	}
@@ -40,9 +31,15 @@ func (c ConnState) String() string {
 const (
 	StateNew ConnState = iota
 
-	StateActive
-
 	StateClosed
+
+	StateLogin
+
+	StateEnterRoom
+
+	StateSubTopic
+
+	StateUnSubTopic
 )
 
 type Server struct {
@@ -92,9 +89,9 @@ func (s *Server) startListen() {
 				rawConn:         rawConn,
 				stopSig:         atomic.Int32{},
 				server:          s,
-				groupId:         "",
+				roomId:          "",
 				lastReceiveTime: time.Now(),
-				element:         nil,
+				allElement:      nil,
 				tickElement:     nil,
 				topic:           "",
 			}
@@ -182,7 +179,6 @@ func (s *Server) handleConn(conn *Conn) {
 	conn.pollDesc = desc
 
 	err := poller.Start(desc, func(event netpoll.Event, notice *sync.WaitGroup) {
-		s.CallConnStateChange(conn, StateActive)
 		if event&netpoll.EventRead == 0 {
 			return
 		}

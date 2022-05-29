@@ -21,16 +21,15 @@ type Conn struct {
 	rawConn         net.Conn
 	stopSig         atomic.Int32
 	server          *Server
-	groupId         string
+	roomId          string
 	lastReceiveTime time.Time
-	element         *list.Element
+	allElement      *list.Element
 	tickElement     *list.Element
 	topic           string
 	poll            netpoll.Poller
 	pollDesc        *netpoll.Desc
 }
 
-// todo 异步写
 func (c *Conn) WriteMsg(opCode ws.OpCode, data []byte) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
