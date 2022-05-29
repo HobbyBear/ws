@@ -10,6 +10,7 @@ import (
 const (
 	SubMsgType   = "sub_topic" // 订阅的消息类型
 	Login        = "login"
+	EnterRoom    = "enter_room"
 	UnSubMsgType = "unsub_topic" // 取消订阅消息
 	Ping         = "ping"
 	Close        = "close"
@@ -33,6 +34,10 @@ func NewWsMux() *WServerMux {
 	mux.AddHandler(Login, HandlerFunc(func(opCode ws.OpCode, reqMsg *msg.ReqMsg, conn *Conn) {
 		conn.uid = reqMsg.Uid
 		conn.server.CallConnStateChange(conn, StateLogin)
+	}))
+	mux.AddHandler(EnterRoom, HandlerFunc(func(opCode ws.OpCode, reqMsg *msg.ReqMsg, conn *Conn) {
+		conn.uid = reqMsg.Uid
+		conn.server.CallConnStateChange(conn, StateEnterRoom)
 	}))
 	mux.AddHandler(UnSubMsgType, HandlerFunc(func(opCode ws.OpCode, reqMsg *msg.ReqMsg, conn *Conn) {
 		conn.topic = ""

@@ -18,8 +18,9 @@ type ConnMgr interface {
 	Del(c *Conn)
 	Add(c *Conn)
 	GetConnByUids(uids []string) map[string][]*Conn
-	GetConnByRoomId(groupId string) []*Conn
+	GetConnByRoomId(roomId string) []*Conn
 	GetAllConn() []*Conn
+	GetRoom() []*Room
 }
 
 type DefaultConnMgr struct {
@@ -90,7 +91,18 @@ func (cm *DefaultConnMgr) Del(conn *Conn) {
 		}
 	}
 	if room, ok := cm.RoomsMap[conn.roomId]; ok {
-		room.Del(conn)
+		left := room.Del(conn)
+		if left == 0 {
+			delete(cm.RoomsMap, conn.roomId)
+		}
 	}
 	cm.All.Remove(conn.allElement)
+}
+
+func (cm *DefaultConnMgr) GetRoom() []*Room {
+	roomList := make([]*Room, 0)
+	for _, room := range cm.RoomsMap {
+		roomList = append(roomList, room)
+	}
+	return roomList
 }

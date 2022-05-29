@@ -35,7 +35,7 @@ func (r *Room) GetConnList() []*Conn {
 	return connList
 }
 
-func (r *Room) Del(c *Conn) {
+func (r *Room) Del(c *Conn) int {
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
 	for e := r.connList.Front(); e != nil; e = e.Next() {
@@ -44,4 +44,5 @@ func (r *Room) Del(c *Conn) {
 			r.connList.Remove(e)
 		}
 	}
+	return r.connList.Len()
 }
