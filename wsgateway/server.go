@@ -56,7 +56,7 @@ type Server struct {
 	ReadPayloadDeadline time.Duration // 读取payload的超时时间
 	cpuNum              int
 	ConnMgr             ConnMgr
-	Broker              broker.Broker
+	Brokers             []broker.Broker
 	Mux                 Handler
 	TickOpen            bool // true 代表开启心跳检测
 	CallConnStateChange func(c *Conn, state ConnState)
@@ -125,7 +125,9 @@ func (s *Server) Start(block bool) {
 
 func (s *Server) ShutDown() {
 	s.listener.Close()
-	s.Broker.Close()
+	for _, b := range s.Brokers {
+		b.Close()
+	}
 	closewait := sync.WaitGroup{}
 	for _, conn := range s.ConnMgr.GetAllConn() {
 		closewait.Add(1)

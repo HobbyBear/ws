@@ -24,7 +24,7 @@ func OptionSetConnMgr(connMgr ConnMgr) Option {
 
 func OptionSetBroker(broker broker.Broker) Option {
 	return func(s *Server) *Server {
-		s.Broker = broker
+		s.Brokers = append(s.Brokers, broker)
 		return s
 	}
 }

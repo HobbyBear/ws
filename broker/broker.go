@@ -4,6 +4,7 @@ type Broker interface {
 	Pub(msg []byte) error
 	Sub() chan []byte
 	Close() error
+	Type()
 }
 
 type Producer interface {
