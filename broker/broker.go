@@ -13,6 +13,6 @@ type Producer interface {
 }
 
 type Consumer interface {
-	Sub() chan []byte
+	Sub() chan interface{}
 	Close() error
 }

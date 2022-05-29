@@ -22,12 +22,12 @@ func (r *RedisBroker) Close() error {
 }
 
 func (r *RedisBroker) Pub(msg []byte) error {
-	_, err := r.Publish(context.TODO(), "broker", msg).Result()
+	_, err := r.Publish(context.TODO(), "pushmsg", msg).Result()
 	return err
 }
 
 func (r *RedisBroker) Sub() chan []byte {
-	sub := r.Subscribe(context.TODO(), "broker")
+	sub := r.Subscribe(context.TODO(), "pushmsg")
 	go func() {
 		for msg := range sub.Channel() {
 			r.ch <- []byte(msg.Payload)
